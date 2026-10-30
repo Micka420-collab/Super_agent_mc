@@ -192,7 +192,7 @@ describe('body e2e (flying-squid)', () => {
     // walk back to the start for the rest of the suite
     const back = await runtime!.runner.run({ action: 'goto', args: { x: start.x + 0.5, y: start.y, z: start.z + 0.5, range: 1, timeoutMs: 30_000 } });
     expect(back.ok, JSON.stringify(back)).toBe(true);
-  });
+   }, 90_000); // descent + tunnel + ascent: 3 surveyed courses
 
   it('places blocks and builds a small wall from creative inventory', async () => {
     const bot = runtime!.bot;

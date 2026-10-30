@@ -8,7 +8,7 @@ import { countItem, findItem, inventorySummary, normalizeName, resolveItemNames 
 import { raceAbort, sleep, throwIfAborted, waitFor } from '../util/async.js';
 import { distance } from '../util/geometry.js';
 import { inventoryDelta } from './mining.js';
-import { SMELTING } from '../motor/procurement.js';
+import { SMELTING, UTILITY_SEARCH_RADIUS } from '../motor/procurement.js';
 import { defineAction, type ActionContext } from './registry.js';
 
 /** How many items one unit of fuel smelts (vanilla values). */
@@ -103,7 +103,7 @@ function canMakeTable(bot: ActionContext['bot']): boolean {
   return items.some((i) => i.name.endsWith('_planks') && i.count >= 4) || items.some((i) => i.name.endsWith('_log'));
 }
 
-export async function ensureCraftingTable(ctx: ActionContext, maxDistance = 32): Promise<Block> {
+export async function ensureCraftingTable(ctx: ActionContext, maxDistance = UTILITY_SEARCH_RADIUS): Promise<Block> {
   const bot = ctx.bot;
   const tableId = bot.registry.blocksByName['crafting_table']?.id;
   if (tableId === undefined) throw new BodyError(ErrorCodes.INTERNAL, 'no crafting_table in registry');

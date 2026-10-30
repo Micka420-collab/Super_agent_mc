@@ -41,6 +41,11 @@ export interface Plan {
   materials: Record<string, number>;
 }
 
+/** How far a known crafting table or furnace counts as "mine to use". Shared with `ensureCraftingTable`, so the
+ * plan and the execution agree (seen live: the plan ignored a table 31 blocks away and sent the agent to chop wood
+ * it could not find, underground, for a whole day). */
+export const UTILITY_SEARCH_RADIUS = 48;
+
 /** Smelting recipes minecraft-data does not expose as crafting recipes. */
 export const SMELTING: Record<string, string> = {
   iron_ingot: 'raw_iron',

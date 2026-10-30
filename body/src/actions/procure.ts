@@ -15,9 +15,9 @@ import { isOre, miningAdvice } from '../motor/ores.js';
 import { throwIfAborted } from '../util/async.js';
 import { distance } from '../util/geometry.js';
 import { ensureCraftingTable, chooseFuel } from './crafting.js';
+import { UTILITY_SEARCH_RADIUS } from '../motor/procurement.js';
 import { defineAction, getAction, parseArgs, type ActionContext } from './registry.js';
 
-const UTILITY_SEARCH_RADIUS = 24;
 const MINE_SEARCH_RADIUS = 48;
 const HUNT_RADIUS = 40;
 /** How many times a mine step may come back empty-handed (with an exploration in between) before giving up. */
@@ -74,7 +74,11 @@ defineAction({
   async run(ctx, a) {
     const target = resolveTarget(ctx, a.name);
     const plan = plannerFor(ctx).plan(target, a.count);
-    return { ...plan, feasible: plan.unresolved.length === 0, text: describePlan(plan) };
+    const tableId = ctx.bot.registry.blocksByName['crafting_table']?.id;
+    const table = tableId !== undefined ? ctx.bot.findBlock({ matching: tableId, maxDistance: UTILITY_SEARCH_RADIUS }) : null;
+    const usesTable = plan.steps.some((st) => (st as { table?: boolean }).table);
+    const tableNote = table && usesTable ? ` Uses the crafting table at ${table.position.x}, ${table.position.y}, ${table.position.z} (get walks there, breaking through by hand if walled in without a pickaxe).` : '';
+    return { ...plan, feasible: plan.unresolved.length === 0, text: describePlan(plan) + tableNote, ...(table && usesTable ? { craftingTable: { x: table.position.x, y: table.position.y, z: table.position.z } } : {}) };
   },
 });
 
