@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  body:
+    name: body (TypeScript)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: body
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: body/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: e2e against flying-squid (JS Minecraft server)
+        run: npm run test:e2e
+      - name: protocol fixtures are up to date
+        run: |
+          npx tsx src/tools/gen-fixtures.ts ../protocol/fixtures
+          git diff --exit-code -- ../protocol/fixtures || (echo "fixtures out of date: run gen-fixtures" && exit 1)
+
+  mind:
+    name: mind (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mind
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests
+      - run: mypy src/emeth
+      - run: pytest

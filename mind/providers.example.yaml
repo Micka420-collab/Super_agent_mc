@@ -1,0 +1,42 @@
+# Fournisseurs LLM par tier. Copiez en providers.yaml et pointez EMETH_PROVIDERS_PATH dessus.
+# Tiers : smart (décisions, rêve, design), fast (critic, réécriture mémoire, args), code (skills), vision (critique d'image), embed.
+# L'ordre = file de failover. Un fournisseur sans api_key_env est considéré local (toujours disponible).
+providers:
+  - id: anthropic
+    api_format: anthropic
+    base_url: https://api.anthropic.com
+    api_key_env: ANTHROPIC_API_KEY
+    models:
+      smart: claude-sonnet-5-5
+      fast: claude-haiku-5-5
+      code: claude-sonnet-5-5
+      vision: claude-sonnet-5-5
+    supports_vision: true
+    input_cost_per_m: 3.0
+    output_cost_per_m: 15.0
+
+  - id: openrouter
+    api_format: openai_chat
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    models:
+      smart: anthropic/claude-sonnet-5.5
+      fast: deepseek/deepseek-v4-flash
+      code: anthropic/claude-sonnet-5.5
+    headers:
+      HTTP-Referer: https://github.com/Micka420-collab/Super_agent_mc
+      X-Title: EMETH
+
+  - id: ollama
+    api_format: openai_chat
+    base_url: http://127.0.0.1:11434/v1
+    models:
+      smart: qwen3:14b
+      fast: qwen3:8b
+      code: qwen3-coder:30b
+      vision: qwen3-vl:8b
+    supports_vision: true
+    supports_embeddings: true
+    embedding_model: nomic-embed-text
+    supports_json_schema: false
+    timeout_s: 180

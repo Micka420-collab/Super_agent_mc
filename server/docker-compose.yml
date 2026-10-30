@@ -1,0 +1,34 @@
+# Serveur Minecraft de test pour EMETH (Paper 1.21.11, mode hors-ligne pour un compte bot).
+#   docker compose up -d        → serveur sur :25565, RCON sur :25575
+#   docker compose logs -f mc   → suivre le démarrage (≈ 1 min la première fois)
+# Pour 26.2/26.3, gardez ce serveur 1.21.11 ou ajoutez ViaProxy devant (Mineflayer plafonne à 26.1).
+services:
+  mc:
+    image: itzg/minecraft-server:java21
+    container_name: emeth-mc
+    tty: true
+    stdin_open: true
+    ports:
+      - "25565:25565"
+      - "25575:25575"
+    environment:
+      EULA: "TRUE"
+      TYPE: PAPER
+      VERSION: "1.21.11"
+      MEMORY: "3G"
+      ONLINE_MODE: "false"          # le bot utilise un compte hors-ligne (MC_AUTH=offline)
+      DIFFICULTY: normal
+      MODE: survival
+      MOTD: "EMETH test world"
+      VIEW_DISTANCE: "8"
+      SIMULATION_DISTANCE: "6"
+      MAX_PLAYERS: "10"
+      SPAWN_PROTECTION: "0"
+      ENABLE_RCON: "true"
+      RCON_PASSWORD: "emeth-rcon"
+      OPS: ""                       # ne pas op le bot : il doit jouer comme un joueur
+      ENABLE_COMMAND_BLOCK: "false"
+      SEED: "emeth-2026"            # seed fixe → monde reproductible pour les bancs d'essai
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
