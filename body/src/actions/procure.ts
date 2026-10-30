@@ -293,6 +293,7 @@ defineAction({
   description:
     'Obtain an item by executing its whole dependency tree — mine, craft, smelt, hunt nearby mobs, place a crafting table — replanning from the real inventory after every step. Stops and reports (MISSING_ITEM with the remaining plan) when a step needs something it cannot do alone.',
   longRunning: true,
+  defaultTimeoutMs: 600_000, // a whole chain: mine, walk or dig to a table, craft, smelt
   schema: z.object({
     name: z.string().describe('item to obtain, e.g. "stone_pickaxe", "torch", "iron_ingot"'),
     count: z.number().int().min(1).max(256).default(1),

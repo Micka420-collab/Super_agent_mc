@@ -106,6 +106,24 @@ export interface PlaceResult {
  * Place `itemName` at `pos`. Walks into a position from which the reference block is reachable,
  * sneaks to avoid activating containers, and verifies the result.
  */
+/**
+ * Cells I placed myself (shelter walls, seals, towers). A player may dig back through their own walls, never through
+ * someone else's build: this is what tells the two apart for a body that cannot read block ownership. Kept for the
+ * life of the process, capped.
+ */
+const OWN_BLOCKS = new Set<string>();
+const OWN_BLOCKS_MAX = 20_000;
+const ownKey = (p: Vec3Like) => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
+
+export function rememberOwnBlock(p: Vec3Like): void {
+  if (OWN_BLOCKS.size >= OWN_BLOCKS_MAX) OWN_BLOCKS.delete(OWN_BLOCKS.values().next().value as string);
+  OWN_BLOCKS.add(ownKey(p));
+}
+
+export function isOwnBlock(p: Vec3Like): boolean {
+  return OWN_BLOCKS.has(ownKey(p));
+}
+
 export async function placeBlockAt(bot: Bot, itemName: string, pos: Vec3Like, signal?: AbortSignal): Promise<PlaceResult> {
   const target = new Vec3(Math.floor(pos.x), Math.floor(pos.y), Math.floor(pos.z));
   const existing = bot.blockAt(target);
@@ -163,6 +181,7 @@ export async function placeBlockAt(bot: Bot, itemName: string, pos: Vec3Like, si
   await sleep(100, signal);
   const after = bot.blockAt(target);
   const ok = !!after && !isReplaceable(after);
+  if (ok) rememberOwnBlock(target);
   return { placed: ok, position: target, block: after?.name ?? 'air', ...(ok ? {} : { reason: 'block did not appear' }) };
 }
 

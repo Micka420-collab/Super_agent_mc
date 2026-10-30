@@ -128,7 +128,7 @@ export class ActionRunner {
     }
     const running = this.acquire(def.name, 'action', priority);
     const ctx = this.makeContext(running);
-    const timeoutMs = req.timeoutMs ?? (def.longRunning ? 180_000 : 30_000);
+    const timeoutMs = req.timeoutMs ?? def.defaultTimeoutMs ?? (def.longRunning ? 180_000 : 30_000);
     let result: ActionResult;
     try {
       const value = await raceAbort(def.run(ctx, args), running.controller.signal, {

@@ -7,7 +7,7 @@ import { equipBestTool, findItem, hasFreeSlot, inventorySummary, normalizeName, 
 import { ProcurementPlanner } from '../motor/procurement.js';
 import { assessSite, cardinalFromYaw, isTerrain, nextApproachStep, stairStep, stairUpStep, summariseOres, tunnelStep, type BlockLookup, type Cardinal, type Course, type NamedCell } from '../motor/digging.js';
 import { describeOre, miningAdvice } from '../motor/ores.js';
-import { placeBlockAt } from '../motor/placing.js';
+import { isOwnBlock, placeBlockAt } from '../motor/placing.js';
 import { raceAbort, sleep, throwIfAborted } from '../util/async.js';
 import { distance } from '../util/geometry.js';
 import { defineAction, type ActionContext } from './registry.js';
@@ -61,7 +61,7 @@ function eyeDistance(bot: ActionContext['bot'], p: { x: number; y: number; z: nu
  * hides it. Seen live: `mine iron_ore` timed out twice on an ore 5 blocks away behind the wall, and reported the ore
  * as mined while it was still there.
  */
-async function reachBlock(ctx: ActionContext, target: Block): Promise<void> {
+export async function reachBlock(ctx: ActionContext, target: Block, opts: { byHand?: boolean } = {}): Promise<void> {
   const bot = ctx.bot;
   const lookup: BlockLookup = (x, y, z) => bot.blockAt(new Vec3(x, y, z))?.name ?? null;
   const same = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => a.x === b.x && a.y === b.y && a.z === b.z;
@@ -80,9 +80,12 @@ async function reachBlock(ctx: ActionContext, target: Block): Promise<void> {
     if (course.clear.some((c) => same(c, target.position))) break; // the target itself is next to us
     const report = assessSite(lookup, course);
     if (!report.ok) throw new BodyError(ErrorCodes.NO_PATH, `cannot dig a way to the ${target.name}: ${report.stop ?? 'unsafe'}`, { hazards: report.hazards });
-    const built = course.clear.map((c) => lookup(c.x, c.y, c.z)).filter((n): n is string => !!n && !AIR_NAMES.has(n) && !isTerrain(n));
-    if (built.length) throw new BodyError(ErrorCodes.NO_PATH, `the way to the ${target.name} goes through ${built[0]}, which someone placed — I do not dig through builds`);
-    requirePickaxe(ctx);
+    const built = course.clear.filter((c) => {
+      const n = lookup(c.x, c.y, c.z);
+      return !!n && !AIR_NAMES.has(n) && !isTerrain(n) && !isOwnBlock(c);
+    });
+    if (built.length) throw new BodyError(ErrorCodes.NO_PATH, `the way to the ${target.name} goes through ${lookup(built[0]!.x, built[0]!.y, built[0]!.z)}, which someone placed — I do not dig through builds`);
+    if (!opts.byHand) requirePickaxe(ctx);
     for (const cell of [...course.clear].reverse()) await clearCell(ctx, cell, report.falling.length > 0);
     try {
       await goTo(bot, { x: course.feet.x + 0.5, y: course.feet.y, z: course.feet.z + 0.5 }, 0.6, ctx.signal, { timeoutMs: 12_000, profile: COURSE_PROFILE });
@@ -100,7 +103,7 @@ async function reachBlock(ctx: ActionContext, target: Block): Promise<void> {
     const len = distance(eye, c);
     const hit = ctx.observer.raycast(eye, { x: (c.x - eye.x) / len, y: (c.y - eye.y) / len, z: (c.z - eye.z) / len }, len + 0.5);
     if (!hit || same(hit.position, target.position)) return;
-    if (!isTerrain(hit.name)) throw new BodyError(ErrorCodes.NO_PATH, `${hit.name} is in the way of the ${target.name}, and I do not dig through builds`);
+    if (!isTerrain(hit.name) && !isOwnBlock(hit.position)) throw new BodyError(ErrorCodes.NO_PATH, `${hit.name} is in the way of the ${target.name}, and I do not dig through builds`);
     await clearCell(ctx, hit.position, false);
   }
 }

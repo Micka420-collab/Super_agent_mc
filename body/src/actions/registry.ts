@@ -27,6 +27,8 @@ export interface ActionDef<S extends z.ZodType = z.ZodType> {
   description: string;
   schema: S;
   longRunning: boolean;
+  /** default time budget when the caller gives none (long-running default 180 s) */
+  defaultTimeoutMs?: number;
   run: (ctx: ActionContext, args: z.infer<S>) => Promise<unknown>;
 }
 

@@ -2,12 +2,12 @@ import { z } from 'zod';
 import type { Block } from 'prismarine-block';
 import type { Recipe } from 'prismarine-recipe';
 import { BodyError, ErrorCodes } from '../protocol.js';
-import { ESCAPE_PROFILE, goToBlock } from '../motor/movement.js';
+import { goToBlock } from '../motor/movement.js';
 import { findPlacementSpotNear, placeBlockAt } from '../motor/placing.js';
 import { countItem, findItem, inventorySummary, normalizeName, resolveItemNames } from '../motor/items.js';
 import { raceAbort, sleep, throwIfAborted, waitFor } from '../util/async.js';
 import { distance } from '../util/geometry.js';
-import { inventoryDelta } from './mining.js';
+import { inventoryDelta, reachBlock } from './mining.js';
 import { SMELTING, UTILITY_SEARCH_RADIUS } from '../motor/procurement.js';
 import { defineAction, type ActionContext } from './registry.js';
 
@@ -126,8 +126,8 @@ export async function ensureCraftingTable(ctx: ActionContext, maxDistance = UTIL
       await goToBlock(bot, existing.position, ctx.signal, 30_000);
     } catch (err) {
       if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
-      ctx.progress('no way to the crafting table on foot: breaking through by hand');
-      await goToBlock(bot, existing.position, ctx.signal, 120_000, ESCAPE_PROFILE);
+      ctx.progress('no way to the crafting table on foot: digging my way there by hand');
+      await reachBlock(ctx, existing, { byHand: true });
     }
     return existing;
   }
