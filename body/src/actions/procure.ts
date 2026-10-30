@@ -158,6 +158,17 @@ export async function executeStep(ctx: ActionContext, step: PlanStep, exploratio
       const gained = countItem(bot, step.item) - before;
       return { ok: gained > 0, detail: `${res.killed ? 'killed' : 'fought'} a ${target.name} — ${gained > 0 ? `+${gained} ${step.item}` : `no ${step.item} dropped`}` };
     }
+    case 'shear': {
+      const before = countItem(bot, step.item);
+      try {
+        const res = await deps.runSub<{ sheared: number; wool: number }>(ctx, 'shear', { count: Math.min(step.count, 64), color: step.item, maxDistance: HUNT_RADIUS });
+        const gained = countItem(bot, step.item) - before;
+        return { ok: gained > 0, detail: `sheared ${res.sheared} sheep for ${gained} ${step.item}` };
+      } catch (err) {
+        if (isCode(err, ErrorCodes.NOT_FOUND)) return { ok: false, detail: (err as Error).message, blocked: true };
+        throw err;
+      }
+    }
     case 'acquire':
       return { ok: false, detail: `${step.item}: ${step.note ?? 'cannot be obtained automatically'}`, blocked: true };
   }

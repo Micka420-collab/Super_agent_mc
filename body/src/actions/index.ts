@@ -10,6 +10,7 @@ import './combat.js';
 import './inventory.js';
 import './social.js';
 import './survival.js';
+import './animals.js';
 import './perception.js';
 
 export { buildManifest, buildSkillApiDoc, getAction, listActions, parseArgs } from './registry.js';

@@ -12,7 +12,7 @@ import type { IndexedData } from 'minecraft-data';
 import prismarineRecipe from 'prismarine-recipe';
 import { normalizeName } from './items.js';
 
-export type StepKind = 'mine' | 'craft' | 'smelt' | 'hunt' | 'place_table' | 'acquire';
+export type StepKind = 'mine' | 'craft' | 'smelt' | 'hunt' | 'shear' | 'place_table' | 'acquire';
 
 export interface PlanStep {
   kind: StepKind;
@@ -231,9 +231,14 @@ export class ProcurementPlanner {
       steps.push({ kind: 'smelt', item, count: need, sources: [smeltInput], fuel: true, consumes: { [smeltInput]: need } });
       return;
     }
-    // 3. curated mob sources beat crafting chains that only hunt anyway (wool from sheep, not 4 string)
+    // 3. curated mob sources beat crafting chains that only hunt anyway (wool from sheep, not 4 string);
+    //    with shears in hand, wool is sheared — the sheep lives and regrows it
     if (MOB_SOURCES[item] && !(inv[item] ?? 0)) {
-      steps.push({ kind: 'hunt', item, count: need, sources: MOB_SOURCES[item] as string[] });
+      if (item.endsWith('_wool') && (inv['shears'] ?? 0) > 0) {
+        steps.push({ kind: 'shear', item, count: need, sources: ['sheep'] });
+      } else {
+        steps.push({ kind: 'hunt', item, count: need, sources: MOB_SOURCES[item] as string[] });
+      }
       materials[item] = (materials[item] ?? 0) + need;
       return;
     }
@@ -414,6 +419,8 @@ export function describePlan(plan: Plan): string {
         return `${i + 1}. smelt ${s.count} ${s.item} from ${s.sources?.join(', ')} (needs fuel)`;
       case 'hunt':
         return `${i + 1}. hunt ${s.sources?.join('/')} for ${s.count} ${s.item}`;
+      case 'shear':
+        return `${i + 1}. shear sheep for ${s.count} ${s.item}`;
       case 'place_table':
         return `${i + 1}. place a crafting table`;
       default:

@@ -11,3 +11,22 @@ docker exec -i emeth-mc rcon-cli time set day
 docker exec -i emeth-mc rcon-cli give Micka writable_book 1      # pour que l'agent reçoive un journal
 docker exec -i emeth-mc rcon-cli tp Emeth Micka                   # exceptionnel : ramener le bot (ça triche)
 ```
+
+## Versions : 1.21.11, 26.1, et au-delà via ViaProxy
+
+Mineflayer (le corps) parle les protocoles jusqu'à **26.1**. Un serveur Paper 1.21.11 ou 26.1 fonctionne directement
+(`MC_VERSION` auto-détecté). Pour rejoindre un serveur **26.2 / 26.3** sans attendre Mineflayer :
+
+1. Télécharger [ViaProxy](https://github.com/ViaVersion/ViaProxy/releases) (jar, Java 17+).
+2. Le lancer en mode CLI à côté du corps :
+   ```bash
+   java -jar ViaProxy.jar cli --bind-address 127.0.0.1:25566 --target-address mon-serveur:25565 \
+        --target-version 26.3 --auth-method NONE
+   ```
+   (`--auth-method ACCOUNT` + `ViaProxy.jar` en mode GUI une première fois pour un compte Microsoft).
+3. Pointer le corps sur le proxy avec la version qu'il connaît : `MC_HOST=127.0.0.1 MC_PORT=25566 MC_VERSION=26.1`.
+
+ViaProxy traduit les paquets dans les deux sens ; les nouveaux blocs/entités de 26.2+ apparaissent au corps sous leurs
+équivalents 26.1 (ils restent visibles et solides, mais leur nom peut être approximatif). Les tests e2e tournent sur
+flying-squid (1.21.1, JS, sans Java) : il ne gère ni les recettes serveur, ni les portes/torches — ces primitives sont à
+valider sur Paper.

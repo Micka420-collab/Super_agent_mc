@@ -6,7 +6,7 @@ import { ActionManifestEntrySchema, ErrorCodes } from '../src/protocol.js';
 describe('action registry', () => {
   it('registers the full primitive vocabulary', () => {
     const names = listActions().map((a) => a.name);
-    for (const expected of ['goto', 'mine', 'craft', 'smelt', 'plan_get', 'get', 'place', 'build', 'attack', 'eat', 'sleep', 'say', 'whisper', 'find_blocks', 'observe', 'stop', 'explore', 'follow', 'container_deposit', 'write_book']) {
+    for (const expected of ['goto', 'mine', 'craft', 'smelt', 'plan_get', 'get', 'shear', 'place', 'plan_build', 'build', 'attack', 'eat', 'sleep', 'say', 'whisper', 'find_blocks', 'observe', 'stop', 'explore', 'follow', 'container_deposit', 'write_book']) {
       expect(names).toContain(expected);
     }
     expect(names.length).toBeGreaterThanOrEqual(40);

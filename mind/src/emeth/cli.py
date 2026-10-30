@@ -3,6 +3,7 @@
   emeth run                 start the mind (connects to the body bridge)
   emeth mcp                 serve the running mind as an MCP tool server on stdio (Claude Code / Desktop / Codex)
   emeth doctor              check providers, body connection, data dir
+  emeth prompt-stats        size (chars/tokens) of a decision prompt from the protocol fixtures
   emeth soul export DIR     export the portable soul bundle
   emeth soul import DIR     import a soul bundle into this data dir
   emeth memory search Q     search semantic memory
@@ -86,6 +87,36 @@ def mcp(
         typer.echo("no control token: start the mind first (`emeth run`) or set EMETH_CONTROL_TOKEN", err=True)
         raise typer.Exit(2)
     asyncio.run(serve_stdio(ControlClient(target, secret)))
+
+
+@app.command(name="prompt-stats")
+def prompt_stats(observation: Path | None = typer.Option(None, help="observation JSON (default: protocol fixture)")) -> None:
+    """Size of a decision prompt, block by block — what one thought costs before any key is spent."""
+    from emeth.cognition.decide import manifest_text, system_prompt
+    from emeth.memory.context import ContextBlocks, observation_blocks
+    from emeth.protocol import HelloResult, Observation
+    from emeth.self.identity import Identity
+    from emeth.social.persona import load_persona
+
+    s = Settings()
+    fixtures = Path(__file__).resolve().parents[3] / "protocol" / "fixtures"
+    obs_path = observation or fixtures / "observation.json"
+    obs = Observation.model_validate(json.loads(obs_path.read_text(encoding="utf-8")))
+    hello = HelloResult.model_validate(json.loads((fixtures / "hello.json").read_text(encoding="utf-8")))
+    persona = load_persona(s.persona_path)
+    identity = Identity(name=persona.name)
+    system = system_prompt(persona.render(), manifest_text(hello.actions), s.language, identity.level.frame)
+    blocks = ContextBlocks(**observation_blocks(obs, "quiet moment"))
+    blocks.identity = identity.render()
+    blocks.decision = "Decide what to do right now."
+    context = blocks.render()
+    tokens = lambda text: round(len(text) / 3.6)  # noqa: E731 - rough, prose + JSON mix
+    console.print(f"[bold]system prompt[/]: {len(system):,} chars ≈ {tokens(system):,} tokens (cached across decisions) — {len(hello.actions)} primitives in the manifest")
+    console.print(f"[bold]context (this observation)[/]: {len(context):,} chars ≈ {tokens(context):,} tokens")
+    for name, text in [("identity", blocks.identity), ("sensory", blocks.sensory), ("entities", blocks.entities), ("blocks", blocks.blocks), ("inventory", blocks.inventory)]:
+        console.print(f"  {name:<10} {len(text):>6,} chars ≈ {tokens(text):>5,} tok")
+    console.print("[dim]memory, timeline, goals and players grow with the agent's life — budgets per block in memory/context.py[/]")
+    console.print(f"[bold]max output[/]: {s.loop.max_decision_tokens} tokens · [bold]rate[/]: ≤ {s.loop.max_requests_per_minute} requests/min")
 
 
 @app.command()

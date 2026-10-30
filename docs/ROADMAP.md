@@ -6,7 +6,7 @@ docs, CI.
 
 ## M1 — Première vie sur un vrai serveur (prochain)
 - [ ] Serveur Paper 1.21.11 (`server/docker-compose.yml`), bot hors-ligne, clés LLM → session de 1 h observée.
-- [ ] Calibrer : fréquence des réveils, longueur du contexte (tokens/décision), coût/heure par tier.
+- [ ] Calibrer : fréquence des réveils, longueur du contexte (tokens/décision), coût/heure par tier. Point de départ hors ligne : `emeth prompt-stats` (système ≈ 3,1 k tokens cachés + 0,4–6 k de contexte, ≤ 1,2 k en sortie).
 - [ ] Première tâche de l'échelle (6 bûches → planches → table → pioche) bouclée **sans aide**, puis nuit en abri.
 - [ ] Journal de décisions → matrice de capacités honnête (`docs/CAPABILITIES.md`) : ce qui marche, ce qui échoue, combien de fois.
 - [ ] Corriger les primitives à l'épreuve du réel (pose de blocs sur pente, four, collecte des drops).
@@ -16,7 +16,7 @@ docs, CI.
 - [x] Skills de base livrés dans `skills/library/` : `gather_logs`, `bootstrap_tools`, `emergency_shelter`, `torches` (via `get`), `safe_staircase_mine` (relevé lave/eau/gravier avant chaque marche, torches, arrêt santé), `return_home` (puits 1×1 prudent pour sortir de terre, puis marche).
 - [x] Construction réelle : décision `design {brief}` → `Constructor` (relevé de site `surface_height`, architecte DSL avec budget indicatif, ancrage devant l'agent, `plan_build` — ordre prouvé, blocs flottants/enfermés/occupés —, `build {procure: true, partial: true}`), lieu + page projet en mémoire. Validé contre le corps simulé ; à confirmer sur Paper.
 - [ ] Évaluateur `@miner-org/mineflayer-baritone` vs `mineflayer-pathfinder` (natation, échelles, parkour).
-- [ ] ViaProxy documenté pour 26.2/26.3 ; test e2e sur 26.1.
+- [x] ViaProxy documenté pour 26.2/26.3 (`server/README.md`) ; e2e sur 26.1 impossible sans serveur Java (flying-squid plafonne à 1.21.4) → à faire sur Paper (M1).
 
 ## M3 — Présence
 - [x] Façade MCP de l'esprit (`emeth mcp`, ADR-0006) : status/observe/look/memory_search/timeline/goals/skills + tell (mentor)/suggest_goal/say, sur un canal de contrôle local réutilisable par le tableau de bord — validée en direct (30 oct. 2026).

@@ -62,6 +62,14 @@ describe('procurement planner', () => {
     expect(weird.unresolved).toContain('dragon_egg');
   });
 
+  it('shears sheep for wool when it carries shears, hunts otherwise', () => {
+    const withShears = planner({ oak_planks: 10, shears: 1 }, { hasCraftingTableNearby: true }).plan('white_bed');
+    expect(withShears.steps.map((s) => `${s.kind}:${s.item}`)).toEqual(['shear:white_wool', 'craft:white_bed']);
+    expect(describePlan(withShears)).toContain('shear sheep for 3 white_wool');
+    const without = planner({ oak_planks: 10 }, { hasCraftingTableNearby: true }).plan('white_bed');
+    expect(without.steps[0]).toMatchObject({ kind: 'hunt', item: 'white_wool', sources: ['sheep'] });
+  });
+
   it('never loops through storage blocks (iron_block ↔ iron_ingot)', () => {
     const plan = planner({ furnace: 1, stone_pickaxe: 1 }, { hasFurnaceNearby: true, hasCraftingTableNearby: true }).plan('iron_ingot', 9);
     const kinds = plan.steps.map((s) => `${s.kind}:${s.item}`);

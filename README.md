@@ -19,7 +19,7 @@ Dépôt : `Micka420-collab/Super_agent_mc`. Monorepo : un **corps** TypeScript (
             │  corps (body/, TypeScript/Mineflayer)                                     │
             │  perception honnête (FOV, raycast) · rétine (image du POV sans GPU)      │
             │  réflexes au tick (lave, noyade, fuite, creeper, défense, faim)          │
-            │  52 primitives · sandbox de skills JS (acorn → worker → vm) · bridge      │
+            │  53 primitives · sandbox de skills JS (acorn → worker → vm) · bridge      │
             └───────────────────────────────▲──────────────────────────────────────────┘
                                              │ protocole Minecraft (joueur normal)
                                    serveur Minecraft (Paper / vanilla, 1.21.x – 26.1)
@@ -45,7 +45,7 @@ Tout a été vérifié contre l'état de l'art d'octobre 2026 (voir [`docs/RESEA
 
 ## État du projet (30 oct. 2026)
 
-- ✅ Corps complet, typé, **86 tests** (77 unitaires + 9 e2e sur un vrai serveur Minecraft JS 1.21.1 : spawn, pathfinding, minage, pose, **un cottage de 71 blocs construit depuis une blueprint de l'architecte**, planification d'approvisionnement, skill live, bridge authentifié), 52 primitives.
+- ✅ Corps complet, typé, **88 tests** (79 unitaires + 9 e2e sur un vrai serveur Minecraft JS 1.21.1 : spawn, pathfinding, minage, pose, **un cottage de 71 blocs construit depuis une blueprint de l'architecte**, planification d'approvisionnement, skill live, bridge authentifié), 53 primitives.
 - ✅ Esprit complet, **52 tests** (routeur, mémoire, cognition, builder, boucle de bout en bout avec un corps simulé, canal de contrôle et façade MCP), `ruff` + `mypy` propres.
 - ✅ Chaîne complète validée en direct (`mind/scripts/live_smoke.py`) : corps réel ↔ esprit ↔ MCP (regarder, parler au mentor, répondre dans le jeu).
 - ⏳ Pas encore validé sur un serveur Paper avec de vraies clés LLM : c'est l'étape suivante (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)).

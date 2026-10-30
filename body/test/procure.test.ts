@@ -186,6 +186,13 @@ class Sim {
       }
       case 'collect_items':
         return { approached: 0, inventoryDelta: {} };
+      case 'shear': {
+        const sheep = this.world.entities.filter((e) => e.name === 'sheep');
+        if (!sheep.length) throw new BodyError(ErrorCodes.NOT_FOUND, 'no sheep within range');
+        const n = Math.min(Number(args['count'] ?? 1), sheep.length);
+        this.add(String(args['color'] ?? 'white_wool'), n);
+        return { sheared: n, wool: n, inventoryDelta: {} };
+      }
       default:
         throw new Error(`unexpected primitive in simulation: ${name}`);
     }
@@ -276,6 +283,18 @@ describe('get: plan → act → re-plan loop', () => {
     expect(res.done).toBe(true);
     expect(res.executed.filter((l) => l.includes('killed a spider')).length).toBe(3);
     expect(spiders.world.entities).toEqual([]);
+  });
+
+  it('shears rather than kills when it has shears — and says so when there are no sheep', async () => {
+    const flock = [1, 2, 3].map((id) => ({ id, name: 'sheep', position: new Vec3(3 * id, 64, 0), drops: { white_wool: 1 } }));
+    const sim = new Sim({ ...forest(), tableNearby: true, entities: flock }, { shears: 1, oak_planks: 6 });
+    const res = await runGet(sim.ctx, { name: 'white_bed', count: 1, maxSteps: 6 }, sim.deps);
+    expect(res.done).toBe(true);
+    expect(sim.calls.some((c) => c.startsWith('shear'))).toBe(true);
+    expect(sim.calls.some((c) => c.startsWith('attack'))).toBe(false);
+    expect(sim.world.entities).toHaveLength(3); // every sheep still alive
+    const lonely = new Sim({ ...forest(), tableNearby: true }, { shears: 1, oak_planks: 6 });
+    await expect(runGet(lonely.ctx, { name: 'white_bed', count: 1, maxSteps: 6 }, lonely.deps)).rejects.toMatchObject({ code: ErrorCodes.MISSING_ITEM, message: expect.stringContaining('no sheep') });
   });
 
   it('ignores mobs that are too far away to be worth a chase', async () => {
