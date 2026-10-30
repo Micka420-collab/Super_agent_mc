@@ -1,0 +1,42 @@
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+mind/dist/
+
+# Runtime data (memories, skills learned at runtime, logs, renders)
+data/
+*.log
+*.sqlite
+*.sqlite-journal
+*.db
+renders/
+screenshots/
+
+# Minecraft test server (docker volumes)
+server/data/
+server/plugins/*.jar
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
