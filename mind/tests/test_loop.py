@@ -194,3 +194,42 @@ async def test_death_sets_a_recovery_goal_and_marks_the_place(tmp_path):
     assert len([g for g in loop.planner.goals if g.status == "active" and g.title.startswith("Recover")]) == 1
     await asyncio.sleep(0)  # let the respawn task start
     await body.close()
+
+
+async def test_no_public_speech_to_an_empty_world(tmp_path):
+    world = FakeWorld()
+    loop, body, _ = await make_loop(tmp_path, world)
+    obs = await body.observe("compact")
+    obs.entities.players = []
+    await loop._say("Hmm, personne ici.", None, obs)  # noqa: SLF001
+    assert world.chats == [] and any("(to myself)" in e.text for e in loop.timeline.entries)
+    await loop._say("Psst", "Steve", obs)  # noqa: SLF001 — a whisper has a listener
+    loop._last_heard_at = __import__("time").time()  # noqa: SLF001 — someone spoke in chat a moment ago
+    await loop._say("Je t'entends.", None, obs)  # noqa: SLF001
+    assert world.chats == [("Psst", "Steve"), ("Je t'entends.", None)]
+    await body.close()
+
+
+async def test_skill_synthesis_retries_a_truncated_answer(tmp_path):
+    from emeth.llm.mock import MockProvider as _Mock
+
+    class Truncating(_Mock):
+        async def chat(self, request):  # type: ignore[no-untyped-def]
+            resp = await super().chat(request)
+            if request.purpose == "skill.synthesis.1":
+                resp.finish_reason = "length"
+                resp.json_data = {"plan": "1. find"}
+            return resp
+
+    world = FakeWorld()
+    world.add_inventory("oak_log", 6)
+    loop, body, provider = await make_loop(tmp_path, world)
+    trunc = Truncating("mock", script=scripted_brain)
+    assert loop.synthesizer is not None
+    loop.synthesizer.router = LLMRouter([trunc])
+    obs = await body.observe("compact")
+    out = await loop.synthesizer.accomplish("collect 6 oak logs", obs)
+    assert out.ok and out.attempts == 2
+    assert "cut off" in trunc.requests[1].messages[-1].content
+    assert "step by step" not in trunc.requests[0].messages[0].content.lower()
+    await body.close()

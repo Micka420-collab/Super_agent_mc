@@ -54,6 +54,8 @@ from emeth.social.persona import Persona
 
 log = logging.getLogger(__name__)
 
+AUDIENCE_MEMORY_S = 300.0
+
 COORD_HINT = re.compile(r"-?\d{1,5}\s*[, ]\s*-?\d{1,3}\s*[, ]\s*-?\d{1,5}")
 
 
@@ -132,6 +134,8 @@ class CognitiveLoop:
         self._last_speech: str = ""
         # words from outside the game (the owner through the MCP façade / dashboard), consumed by the next thought
         self._mentor_inbox: list[tuple[str, str]] = []
+        # last time a player spoke in chat: talking to an empty world is noise (seen live: "Hmm, …" at every thought)
+        self._last_heard_at: float = 0.0
 
     # ---------------------------------------------------------------------------------------
     # lifecycle
@@ -220,6 +224,7 @@ class CognitiveLoop:
         kind = ev.event
         if kind == "chat":
             speaker, text = str(p.get("from", "?")), str(p.get("text", ""))
+            self._last_heard_at = time.time()
             self.timeline.add("chat_in", f"{speaker}: {text}", actors=[speaker])
             self.social.on_chat(speaker, text)
             self.drives.on_event("chat_in")
@@ -228,6 +233,7 @@ class CognitiveLoop:
             return None, 0
         if kind == "whisper":
             speaker, text = str(p.get("from", "?")), str(p.get("text", ""))
+            self._last_heard_at = time.time()
             self.timeline.add("whisper_in", f"{speaker} (private): {text}", actors=[speaker])
             self.social.on_chat(speaker, text)
             self.drives.on_event("whisper_in")
@@ -605,7 +611,15 @@ class CognitiveLoop:
         except Exception as exc:  # noqa: BLE001
             log.debug("remember failed: %s", exc)
 
+    def _audience(self, to: str | None, obs: Observation) -> bool:
+        """Someone to talk to: a whisper target, a player in sight, or a chat heard in the last minutes."""
+        return bool(to) or bool(obs.entities.players) or time.time() - self._last_heard_at < AUDIENCE_MEMORY_S
+
     async def _say(self, text: str, to: str | None, obs: Observation) -> None:
+        if not self._audience(to, obs):
+            # nobody around: the words stay a thought (dashboard/plugin still show them as the last speech)
+            self.timeline.add("note", f"(to myself) {text}"[:200], importance=0.1)
+            return
         try:
             await self.body.chat(text, to=to)
         except BodyError as exc:

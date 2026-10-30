@@ -36,6 +36,11 @@ SKILL_SCHEMA: dict[str, Any] = {
     "required": ["plan", "name", "description", "code", "args_json"],
 }
 
+# No "think step by step" here: under structured output that free-text reasoning has nowhere to go and burnt the whole
+# token budget (live: three syntheses in a row cut at 4000 tokens with an empty or `{"plan` answer). The plan field is
+# where the thinking goes.
+SKILL_SYSTEM = "You write robust Mineflayer-style skill programs for an autonomous Minecraft player. Answer with the JSON object only; reason in its `plan` field."
+
 SKILL_RULES = """Rules for skill code:
 - Define `async function main(api, args)`; everything happens inside it (helpers allowed). Return a small JSON-serialisable summary.
 - Only use `api.<primitive>({...})` calls from the API doc plus helpers api.log/api.sleep/api.observe/api.Vec3/api.distance/api.aborted.
@@ -92,7 +97,7 @@ class SkillSynthesizer:
         last_name = safe_skill_name(goal)
         for attempt in range(1, self.max_attempts + 1):
             prompt = self._prompt(goal, obs, api_doc, examples, feedback, context_hint)
-            req = ChatRequest(messages=[Message(role="system", content="You write robust Mineflayer-style skill programs for an autonomous Minecraft player. Think step by step, then output JSON."), Message(role="user", content=prompt)], tier="code", temperature=0.2, max_tokens=4000, json_schema=SKILL_SCHEMA, json_schema_name="skill", purpose=f"skill.synthesis.{attempt}")
+            req = ChatRequest(messages=[Message(role="system", content=SKILL_SYSTEM), Message(role="user", content=prompt)], tier="code", temperature=0.2, max_tokens=6000, json_schema=SKILL_SCHEMA, json_schema_name="skill", purpose=f"skill.synthesis.{attempt}")
             try:
                 resp = await self.router.chat(req)
             except Exception as exc:  # noqa: BLE001
@@ -103,6 +108,10 @@ class SkillSynthesizer:
             m = CODE_BLOCK.search(code)
             if m:
                 code = m.group(1)
+            if resp.finish_reason in ("length", "max_tokens"):
+                feedback = "Your previous answer was cut off at the length limit before the code was complete. Keep `plan` to a few lines and write shorter code (one job, no speculative helpers)."
+                transcript.append(f"attempt {attempt}: answer truncated at the token limit")
+                continue
             if not code.strip():
                 feedback = "Your previous answer contained no code. Return the full JavaScript source in the `code` field."
                 transcript.append(f"attempt {attempt}: empty code")

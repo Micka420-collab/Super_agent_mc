@@ -275,6 +275,7 @@ class LLMRouter:
                 "output_tokens": resp.usage.output_tokens if resp else None,
                 "cached_tokens": resp.usage.cached_tokens if resp else None,
                 "cost_usd": round(resp.cost_usd, 6) if resp else None,
+                "finish_reason": resp.finish_reason if resp else None,
                 "prompt_chars": sum(len(m.content) for m in request.messages),
             }
             try:
