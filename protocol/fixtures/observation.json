@@ -155,7 +155,22 @@
         "itemCount": 2
       }
     ],
-    "other": []
+    "other": [],
+    "threat": {
+      "danger": 0.33,
+      "recommendation": "fight",
+      "reasons": [
+        "zombie 9m",
+        "no armor",
+        "bare hands"
+      ],
+      "count": 1,
+      "strength": 0.5,
+      "nearest": {
+        "name": "zombie",
+        "distance": 9
+      }
+    }
   },
   "blocks": {
     "standingOn": "grass_block",

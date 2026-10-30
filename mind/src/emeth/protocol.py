@@ -141,12 +141,24 @@ class InventoryState(Loose):
         return out
 
 
+class ThreatState(Loose):
+    """The body's own reading of the odds (motor/threat.ts): danger 0..1 and what a player would do."""
+
+    danger: float
+    recommendation: Literal["calm", "watch", "fight", "retreat", "flee"]
+    reasons: list[str] = Field(default_factory=list)
+    count: int = 0
+    strength: float = 0.5
+    nearest: dict[str, Any] | None = None
+
+
 class EntitiesState(Loose):
     players: list[EntityView]
     hostiles: list[EntityView]
     passives: list[EntityView]
     items: list[EntityView]
     other: list[EntityView]
+    threat: ThreatState | None = None
 
 
 class BlocksState(Loose):
@@ -265,6 +277,7 @@ class ReflexConfig(Loose):
     autoDefend: bool = True
     defendRange: float = 6
     fleeAtHealth: float = 7
+    fleeAtDanger: float = 0.8
     fleeDistance: float = 16
     avoidCreepers: bool = True
     creeperRange: float = 5

@@ -129,12 +129,26 @@ export const InventoryStateSchema = z.object({
   selectedHotbarSlot: z.number().int(),
 });
 
+export const ThreatRecommendationSchema = z.enum(['calm', 'watch', 'fight', 'retreat', 'flee']);
+/** "Can I take them?" scored from the hostiles, my gear, my health and the night (motor/threat.ts). */
+export const ThreatStateSchema = z.object({
+  /** 0 (nothing) .. 1 (run) */
+  danger: z.number().min(0).max(1),
+  recommendation: ThreatRecommendationSchema,
+  reasons: z.array(z.string()),
+  count: z.number().int(),
+  strength: z.number(),
+  nearest: z.object({ name: z.string(), distance: z.number() }).nullable(),
+});
+export type ThreatState = z.infer<typeof ThreatStateSchema>;
+
 export const EntitiesStateSchema = z.object({
   players: z.array(EntityViewSchema),
   hostiles: z.array(EntityViewSchema),
   passives: z.array(EntityViewSchema),
   items: z.array(EntityViewSchema),
   other: z.array(EntityViewSchema),
+  threat: ThreatStateSchema.optional(),
 });
 
 export const BlocksStateSchema = z.object({
@@ -243,6 +257,8 @@ export const ReflexConfigSchema = z.object({
   autoDefend: z.boolean().default(true),
   defendRange: z.number().positive().default(6),
   fleeAtHealth: z.number().min(0).max(20).default(7),
+  /** Flee when the threat assessment (entities.threat.danger) reaches this, whatever the health. */
+  fleeAtDanger: z.number().min(0).max(1).default(0.8),
   fleeDistance: z.number().positive().default(16),
   avoidCreepers: z.boolean().default(true),
   creeperRange: z.number().positive().default(5),
