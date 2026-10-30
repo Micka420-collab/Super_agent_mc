@@ -201,8 +201,14 @@ async def test_no_public_speech_to_an_empty_world(tmp_path):
     loop, body, _ = await make_loop(tmp_path, world)
     obs = await body.observe("compact")
     obs.entities.players = []
+    obs.world.online = []
     await loop._say("Hmm, personne ici.", None, obs)  # noqa: SLF001
     assert world.chats == [] and any("(to myself)" in e.text for e in loop.timeline.entries)
+    obs.world.online = ["Micka"]  # connected but far away: the chat still reaches him
+    await loop._say("Salut Micka !", None, obs)  # noqa: SLF001
+    assert world.chats == [("Salut Micka !", None)]
+    world.chats.clear()
+    obs.world.online = []
     await loop._say("Psst", "Steve", obs)  # noqa: SLF001 — a whisper has a listener
     loop._last_heard_at = __import__("time").time()  # noqa: SLF001 — someone spoke in chat a moment ago
     await loop._say("Je t'entends.", None, obs)  # noqa: SLF001

@@ -122,6 +122,7 @@ class WorldState(Loose):
     lightLevel: float
     skyLight: float
     moonPhase: int | None = None
+    online: list[str] = []
 
 
 class InventoryState(Loose):

@@ -75,6 +75,17 @@ class Settings(BaseSettings):
     def control_token_path(self) -> Path:
         return self.data_dir / "control.token"
 
+    def resolve_control_token(self) -> str:
+        """The explicit token, else the one a previous run wrote (so the companion plugin and `emeth mcp` stay
+        connected across restarts of the mind), else empty → the server draws a fresh one."""
+        if self.control_token:
+            return self.control_token
+        path = self.control_token_path()
+        try:
+            return path.read_text(encoding="utf-8").strip() if path.exists() else ""
+        except OSError:
+            return ""
+
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         (self.data_dir / "wiki").mkdir(exist_ok=True)

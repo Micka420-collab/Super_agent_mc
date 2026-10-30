@@ -55,7 +55,7 @@ class Mind:
     async def start(self) -> CognitiveLoop:
         await self.body.connect()
         if self.settings.control_enabled:
-            self.control = ControlServer(ControlAPI(self), self.settings.control_host, self.settings.control_port, self.settings.control_token)
+            self.control = ControlServer(ControlAPI(self), self.settings.control_host, self.settings.control_port, self.settings.resolve_control_token())
             await self.control.start()
             self.control.write_token(self.settings.control_token_path())
         await self.skills.sync_from_disk()

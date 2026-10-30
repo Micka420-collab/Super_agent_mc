@@ -612,8 +612,9 @@ class CognitiveLoop:
             log.debug("remember failed: %s", exc)
 
     def _audience(self, to: str | None, obs: Observation) -> bool:
-        """Someone to talk to: a whisper target, a player in sight, or a chat heard in the last minutes."""
-        return bool(to) or bool(obs.entities.players) or time.time() - self._last_heard_at < AUDIENCE_MEMORY_S
+        """Someone to talk to: a whisper target, another player connected (chat is server-wide), one in sight, or a
+        chat heard in the last minutes. Seen live: a greeting to the owner swallowed because he was not in sight."""
+        return bool(to) or bool(obs.world.online) or bool(obs.entities.players) or time.time() - self._last_heard_at < AUDIENCE_MEMORY_S
 
     async def _say(self, text: str, to: str | None, obs: Observation) -> None:
         if not self._audience(to, obs):

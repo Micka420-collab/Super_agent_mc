@@ -279,6 +279,7 @@ export class Observer {
       lightLevel: feet?.light ?? 0,
       skyLight: feet?.skyLight ?? 0,
       moonPhase: (bot.time as unknown as { moonPhase?: number }).moonPhase,
+      online: Object.keys(bot.players ?? {}).filter((name) => name !== bot.username).sort(),
     };
   }
 

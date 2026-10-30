@@ -283,3 +283,14 @@ async def test_a_client_leaving_mid_call_is_not_an_error(mind_and_world, caplog,
     errors = [r for r in caplog.records if r.levelno >= logging.WARNING and r.name.startswith("emeth.control")]
     assert not errors, [r.getMessage() for r in errors]
     assert any("left before its answer" in r.getMessage() for r in caplog.records)
+
+
+def test_control_token_survives_a_restart(tmp_path):
+    from emeth.config import Settings as _S
+
+    s = _S(data_dir=tmp_path / "d", skills_dir=tmp_path / "s", providers_path=None)
+    assert s.resolve_control_token() == ""  # first run: the server draws one and writes it
+    s.control_token_path().parent.mkdir(parents=True)
+    s.control_token_path().write_text("abc123\n", encoding="utf-8")
+    assert s.resolve_control_token() == "abc123"  # next run reuses it: the plugin keeps its link
+    assert _S(data_dir=tmp_path / "d", skills_dir=tmp_path / "s", control_token="explicit", providers_path=None).resolve_control_token() == "explicit"

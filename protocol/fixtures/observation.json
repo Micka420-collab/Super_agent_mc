@@ -52,7 +52,10 @@
     "isRaining": false,
     "isThundering": false,
     "lightLevel": 15,
-    "skyLight": 15
+    "skyLight": 15,
+    "online": [
+      "Steve"
+    ]
   },
   "inventory": {
     "items": [
