@@ -77,6 +77,9 @@ class Drives:
         threat = 0.0
         if hostiles:
             threat = max(0.3, min(1.0, 1.2 - nearest / 20))
+        if obs.entities.threat is not None:
+            # the body's own reading of the odds (gear, numbers, night) outranks a raw distance
+            threat = max(threat * 0.6, obs.entities.threat.danger)
         health_fear = max(0.0, (14 - s.health) / 14)
         dark = 0.0
         if w.phase == "night" and w.skyLight > 4:

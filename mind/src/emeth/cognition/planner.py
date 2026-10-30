@@ -181,10 +181,20 @@ class Planner:
 
     def complete_task(self, task: Task) -> None:
         task.status = "done"
+        # a verified custom milestone (shelter, farm, portal) becomes a durable fact the ladder can see
+        custom = task.success.get("custom") if task.success else None
+        if custom:
+            self.flags[f"custom:{custom}"] = True
         for g in self.goals:
             if g.status == "active" and all(t.status in ("done", "abandoned") for t in g.tasks):
                 g.status = "done"
         self.save()
+
+    def mark_slept(self) -> None:
+        """The body slept in a bed: the `bed` milestone's verifier reads this flag."""
+        if not self.flags.get("slept"):
+            self.flags["slept"] = True
+            self.save()
 
     def fail_task(self, task: Task, error: str) -> None:
         task.attempts += 1
