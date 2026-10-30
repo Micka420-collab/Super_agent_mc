@@ -198,9 +198,12 @@ Partout, la règle est la même : vous êtes son mentor, pas sa manette ([ADR-00
 | Esprit | 63 | routeur de modèles, mémoire, cognition, réflexion, architecte, boucle complète contre un corps simulé, canal de contrôle et MCP |
 | Plugin | 33 unitaires + 28 vérifications bout en bout | sur Paper 1.21.11, avec le vrai corps, le vrai esprit et un second client qui joue l'humain |
 
-**Ce qui reste à prouver :** une longue session sur un vrai serveur avec un vrai modèle de langage. C'est l'étape M1 de la
-[feuille de route](docs/ROADMAP.md). Il faudra y régler le coût par heure, la fréquence des pensées et les seuils de
-fuite. La voix, le récap vidéo, l'imagination et la société de plusieurs agents sont conçus mais pas encore codés
+**Première vie réelle (30 oct. 2026) :** sur Paper 1.21.11 avec Claude Haiku 5.5, sans aide, il a fait du bois, des
+outils en pierre et un abri vérifié pour la nuit, pour 0,18 $/h. La chasse et le lit échouent encore. Détails dans
+[`docs/CAPABILITIES.md`](docs/CAPABILITIES.md).
+
+**Ce qui reste à prouver :** une session de plusieurs heures avec des joueurs. C'est la suite de l'étape M1 de la
+[feuille de route](docs/ROADMAP.md). La voix, le récap vidéo, l'imagination et la société de plusieurs agents sont conçus mais pas encore codés
 ([`docs/INNOVATIONS.md`](docs/INNOVATIONS.md)).
 
 <br>

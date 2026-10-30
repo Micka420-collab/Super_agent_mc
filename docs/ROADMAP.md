@@ -5,10 +5,10 @@ Corps Mineflayer complet et testé (unitaires + e2e sur serveur JS), esprit comp
 docs, CI.
 
 ## M1 — Première vie sur un vrai serveur (prochain) — guide : `docs/FIRST_RUN.md`
-- [ ] Serveur Paper 1.21.11 (`server/docker-compose.yml`), bot hors-ligne, clés LLM → session de 1 h observée.
-- [ ] Calibrer : fréquence des réveils, longueur du contexte (tokens/décision), coût/heure par tier. Point de départ hors ligne : `emeth prompt-stats` (système ≈ 3,1 k tokens cachés + 0,4–6 k de contexte, ≤ 1,2 k en sortie).
-- [ ] Première tâche de l'échelle (6 bûches → planches → table → pioche) bouclée **sans aide**, puis nuit en abri.
-- [ ] Journal de décisions → matrice de capacités honnête (`docs/CAPABILITIES.md`) : ce qui marche, ce qui échoue, combien de fois.
+- [~] Serveur Paper 1.21.11, bot hors-ligne, clés LLM → session observée : 38 min réelles, deux nuits de jeu, claude-haiku-5.5 (30 oct. 2026, `docs/CAPABILITIES.md`). Reste une heure d'affilée et avec un joueur.
+- [x] Calibrer (première mesure) : environ 10 k tokens en entrée et 360 en sortie par décision, 0,0012 $ par décision, 0,18 $/h avec Haiku 5.5 ; plafond dur `EMETH_MAX_USD`. Point de départ hors ligne : `emeth prompt-stats` (système ≈ 3,1 k tokens cachés + 0,4–6 k de contexte, ≤ 1,2 k en sortie).
+- [x] Première tâche de l'échelle bouclée **sans aide**, jusqu'aux outils en pierre ; nuit en abri vérifié par la perception d'enceinte (nuit 2).
+- [x] Matrice de capacités honnête (`docs/CAPABILITIES.md`), session 1.
 - [ ] Corriger les primitives à l'épreuve du réel (pose de blocs sur pente, four, collecte des drops).
 
 ## M2 — Compétence
