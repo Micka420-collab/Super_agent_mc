@@ -6,7 +6,7 @@ import { countItem, inventorySummary, normalizeName } from '../motor/items.js';
 import { throwIfAborted } from '../util/async.js';
 import { distance } from '../util/geometry.js';
 import { inventoryDelta } from './mining.js';
-import { defineAction } from './registry.js';
+import { defineAction, getAction } from './registry.js';
 
 export const BlockPlacementSchema = z.object({
   name: z.string(),
@@ -139,7 +139,6 @@ defineAction({
       const b = bot.blockAt(new Vec3(x, y, z));
       if (b && !isReplaceable(b) && !keep.has(b.name)) targets.push(new Vec3(x, y, z));
     }
-    const { getAction } = await import('./registry.js');
     const dig = getAction('dig');
     let dug = 0;
     const failures: string[] = [];

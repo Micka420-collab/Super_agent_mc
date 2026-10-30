@@ -4,17 +4,12 @@
 import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
-import pathfinderPkg from 'mineflayer-pathfinder';
 import type { Vec3Like } from '../protocol.js';
 import { BodyError, ErrorCodes } from '../protocol.js';
-import { raceAbort, sleep } from '../util/async.js';
+import { sleep, waitFor } from '../util/async.js';
 import { distance } from '../util/geometry.js';
 import { findItem } from './items.js';
 import { goTo } from './movement.js';
-
-const { goals } = pathfinderPkg;
-
-const FACES: Vec3[] = [new Vec3(0, -1, 0), new Vec3(0, 1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
 
 /** Blocks that cannot be used as a placement reference / are replaced by placing. */
 const NON_SOLID = new Set(['air', 'cave_air', 'void_air', 'water', 'lava', 'grass', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'seagrass', 'kelp', 'vine', 'light']);
@@ -69,18 +64,17 @@ export async function placeBlockAt(bot: Bot, itemName: string, pos: Vec3Like, si
   if (!ref) throw new BodyError(ErrorCodes.BAD_REQUEST, `no solid block next to ${target} to place against`);
 
   // Move so the reference face is within reach and we are not standing in the target cell.
-  if (occupiesCell(bot, target) || distance(bot.entity.position.offset(0, 1.6, 0), target.offset(0.5, 0.5, 0.5)) > 4.5) {
-    const goal = new goals.GoalPlaceBlock(target, bot.world as never, { range: 4, faces: FACES, facing: 'down', half: 'top', LOS: true } as never);
-    try {
-      await raceAbort(bot.pathfinder.goto(goal), signal, { timeoutMs: 30_000, onCancel: () => bot.pathfinder.stop() });
-    } catch {
-      // fall back: stand 2 blocks away in any direction
-      await goTo(bot, { x: target.x + 0.5, y: target.y, z: target.z + 0.5 }, 2.5, signal, { timeoutMs: 30_000 });
-    }
+  const eyeToTarget = () => distance(bot.entity.position.offset(0, 1.6, 0), target.offset(0.5, 0.5, 0.5));
+  if (occupiesCell(bot, target) || eyeToTarget() > 4.2) {
+    // stand ~2 blocks away from the target, on the side closest to where we are now
+    const dir = bot.entity.position.minus(target.offset(0.5, 0, 0.5));
+    const horiz = Math.hypot(dir.x, dir.z) || 1;
+    const stand = target.offset(0.5 + (dir.x / horiz) * 2, 0, 0.5 + (dir.z / horiz) * 2);
+    await goTo(bot, stand, 0.8, signal, { timeoutMs: 20_000 });
+    if (eyeToTarget() > 5.5) await goTo(bot, { x: target.x + 0.5, y: target.y, z: target.z + 0.5 }, 2.5, signal, { timeoutMs: 20_000 });
     ref = findReference(bot, target) ?? ref;
   }
   if (occupiesCell(bot, target)) {
-    // step aside
     const side = target.offset(1.5, 0, 0.5);
     await goTo(bot, side, 0.6, signal, { timeoutMs: 10_000 });
   }
@@ -89,13 +83,20 @@ export async function placeBlockAt(bot: Bot, itemName: string, pos: Vec3Like, si
   bot.setControlState('sneak', true);
   try {
     await bot.lookAt(ref.reference.position.offset(0.5, 0.5, 0.5).plus(ref.face.scaled(0.5)), true);
-    await raceAbort(bot.placeBlock(ref.reference, ref.face), signal, { timeoutMs: 8_000 });
-  } catch (err) {
-    const msg = (err as Error).message ?? String(err);
-    // Mineflayer throws when the server didn't update the block quickly enough; verify before failing.
-    await sleep(150, signal);
-    const after = bot.blockAt(target);
-    if (!after || isReplaceable(after)) throw new BodyError(ErrorCodes.INTERNAL, `placement failed: ${msg}`);
+    // Mineflayer waits up to 5 s for the server's block update; local servers can answer before the
+    // listener is attached, so we race its promise against our own poll of the target cell.
+    const placed = bot.placeBlock(ref.reference, ref.face).then(() => true).catch((err: Error) => err);
+    const appeared = waitFor(() => !isReplaceable(bot.blockAt(target)), { timeoutMs: 2_500, intervalMs: 40, signal }).then(() => true).catch(() => false);
+    const first = await Promise.race([placed, appeared]);
+    if (first instanceof Error) {
+      await sleep(150, signal);
+      const after = bot.blockAt(target);
+      if (!after || isReplaceable(after)) throw new BodyError(ErrorCodes.INTERNAL, `placement failed: ${first.message}`);
+    } else if (first === false) {
+      const outcome = await Promise.race([placed, sleep(2_000, signal).then(() => 'late' as const)]);
+      if (outcome instanceof Error) throw new BodyError(ErrorCodes.INTERNAL, `placement failed: ${outcome.message}`);
+    }
+    void placed.catch(() => undefined);
   } finally {
     bot.setControlState('sneak', false);
   }

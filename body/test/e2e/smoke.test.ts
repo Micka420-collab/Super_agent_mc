@@ -154,6 +154,46 @@ describe('body e2e (flying-squid)', () => {
     expect(bot.blockAt(new Vec3(below.x, below.y, below.z))?.name).toBe('air');
   });
 
+  it('places blocks and builds a small wall from creative inventory', async () => {
+    const bot = runtime!.bot;
+    const Item = createRequire(import.meta.url)('prismarine-item')(bot.registry) as new (id: number, count: number) => unknown;
+    const stone = bot.registry.itemsByName['stone']!;
+    const pickaxe = bot.registry.itemsByName['diamond_pickaxe']!;
+    await bot.creative.setInventorySlot(36, new Item(stone.id, 64) as never);
+    await bot.creative.setInventorySlot(37, new Item(pickaxe.id, 1) as never);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(bot.inventory.items().some((i) => i.name === 'stone')).toBe(true);
+    const base = bot.entity.position.floored();
+    // single placement
+    const single = await runtime!.runner.run({ action: 'place', args: { name: 'stone', x: base.x + 3, y: base.y, z: base.z + 3 } });
+    expect(single.ok, JSON.stringify(single)).toBe(true);
+    expect(bot.blockAt(new Vec3(base.x + 3, base.y, base.z + 3))?.name).toBe('stone');
+    // a 3x2 wall, bottom-up
+    const blocks = [];
+    for (let dx = 0; dx < 3; dx++) for (let dy = 0; dy < 2; dy++) blocks.push({ name: 'stone', x: base.x - 3 + dx, y: base.y + dy, z: base.z - 3 });
+    const wall = await runtime!.runner.run({ action: 'build', args: { blocks } });
+    expect(wall.ok, JSON.stringify(wall)).toBe(true);
+    const r = wall.result as { placed: number; failureCount: number; alreadyCorrect: number };
+    expect(r.placed + r.alreadyCorrect).toBeGreaterThanOrEqual(5);
+    expect(r.failureCount).toBeLessThanOrEqual(1);
+    // idempotent: a second build reports the cells as already correct
+    const again = await runtime!.runner.run({ action: 'build', args: { blocks } });
+    expect((again.result as { alreadyCorrect: number }).alreadyCorrect).toBeGreaterThanOrEqual(5);
+    // materials check fails loudly when the inventory lacks the block
+    const missing = await runtime!.runner.run({ action: 'build', args: { blocks: [{ name: 'diamond_block', x: base.x, y: base.y + 5, z: base.z }] } });
+    expect(missing.ok).toBe(false);
+    expect(missing.errorCode).toBe('MISSING_ITEM');
+    // survey tools see the new wall
+    const region = await runtime!.runner.run({ action: 'scan_region', args: { min: { x: base.x - 3, y: base.y, z: base.z - 3 }, max: { x: base.x - 1, y: base.y + 1, z: base.z - 3 } } });
+    expect((region.result as { counts: Record<string, number> }).counts['stone']).toBeGreaterThanOrEqual(5);
+    const heights = await runtime!.runner.run({ action: 'surface_height', args: { x: base.x, z: base.z, radius: 4 } });
+    expect((heights.result as { roughness: number }).roughness).toBeGreaterThanOrEqual(1);
+    // clear it again
+    const cleared = await runtime!.runner.run({ action: 'clear_area', args: { min: { x: base.x - 3, y: base.y, z: base.z - 3 }, max: { x: base.x - 1, y: base.y + 1, z: base.z - 3 } } });
+    expect(cleared.ok, JSON.stringify(cleared)).toBe(true);
+    expect((cleared.result as { dug: number }).dug).toBeGreaterThanOrEqual(5);
+  }, 120_000);
+
   it('executes a sandboxed skill that uses the live api', async () => {
     const res = await runSkill(
       {
