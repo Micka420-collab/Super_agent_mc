@@ -1,0 +1,200 @@
+"""EMETH command line.
+
+  emeth run                 start the mind (connects to the body bridge)
+  emeth doctor              check providers, body connection, data dir
+  emeth soul export DIR     export the portable soul bundle
+  emeth soul import DIR     import a soul bundle into this data dir
+  emeth memory search Q     search semantic memory
+  emeth skills list         list learned skills
+  emeth persona init PATH   write a persona template
+  emeth design "brief"      design a structure with the architect and print its layers (dry run)
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from pathlib import Path
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from emeth.config import Settings, load_providers
+
+app = typer.Typer(no_args_is_help=True, help="EMETH — autonomous Minecraft player (mind)")
+soul_app = typer.Typer(help="Portable identity bundles")
+memory_app = typer.Typer(help="Inspect memory")
+skills_app = typer.Typer(help="Skill library")
+persona_app = typer.Typer(help="Persona files")
+app.add_typer(soul_app, name="soul")
+app.add_typer(memory_app, name="memory")
+app.add_typer(skills_app, name="skills")
+app.add_typer(persona_app, name="persona")
+console = Console()
+
+
+def _settings() -> Settings:
+    s = Settings()
+    logging.basicConfig(level=getattr(logging, s.log_level.upper(), logging.INFO), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    return s
+
+
+@app.command()
+def run() -> None:
+    """Start the mind and keep it alive."""
+    from emeth.runtime import build_mind
+
+    settings = _settings()
+    mind = build_mind(settings)
+
+    async def main() -> None:
+        loop = await mind.start()
+        console.print(f"[bold green]EMETH[/] mind online as [bold]{mind.identity.name}[/] (autonomy {mind.identity.level.name}) — body {mind.body.hello.minecraft if mind.body.hello else '?'}")
+        try:
+            await loop.run()
+        finally:
+            await mind.close()
+
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        console.print("bye")
+
+
+@app.command()
+def doctor() -> None:
+    """Check configuration: providers, keys, body bridge reachability."""
+    from emeth.llm.router import LLMRouter
+
+    settings = _settings()
+    settings.ensure_dirs()
+    providers = load_providers(settings.providers_path)
+    router = LLMRouter.from_configs(providers)
+    table = Table(title="LLM providers")
+    table.add_column("id")
+    table.add_column("format")
+    table.add_column("base_url")
+    table.add_column("key")
+    table.add_column("tiers")
+    for p in router.providers.values():
+        table.add_row(p.id, p.config.api_format, p.config.base_url, "✓" if p.available() else "missing", ", ".join(f"{k}={v}" for k, v in p.config.models.items()))
+    console.print(table)
+    if not any(p.available() for p in router.providers.values()):
+        console.print("[red]No provider available: set ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY or run Ollama locally.[/]")
+
+    async def ping() -> None:
+        from emeth.bridge.client import BodyClient, websocket_factory
+
+        client = BodyClient(websocket_factory(settings.bridge_url, settings.bridge_token))
+        try:
+            await asyncio.wait_for(client.connect(), timeout=5)
+            hello = client.hello
+            console.print(f"[green]Body reachable[/] at {settings.bridge_url}: {hello.body if hello else ''} — MC {hello.minecraft if hello else ''} — {len(hello.actions) if hello else 0} actions, vision={hello.capabilities.get('vision') if hello else '?'}")
+            await client.close()
+        except Exception as exc:  # noqa: BLE001
+            console.print(f"[yellow]Body not reachable[/] at {settings.bridge_url}: {exc}")
+
+    asyncio.run(ping())
+    console.print(f"data dir: {settings.data_dir.resolve()} — skills: {Path(settings.skills_dir).resolve()}")
+
+
+@soul_app.command("export")
+def soul_export(out: Path = typer.Argument(..., help="output directory")) -> None:
+    from emeth.memory.soul import export_soul
+    from emeth.runtime import build_mind
+
+    settings = _settings()
+    mind = build_mind(settings)
+    path = export_soul(out, mind.store, mind.identity, mind.wiki, mind.graph, mind.skills)
+    console.print(f"soul exported to {path.resolve()}")
+
+
+@soul_app.command("import")
+def soul_import(src: Path = typer.Argument(..., help="bundle directory"), name: str | None = typer.Option(None, help="rename the agent")) -> None:
+    from emeth.memory.soul import import_soul
+    from emeth.runtime import build_mind
+
+    settings = _settings()
+    mind = build_mind(settings)
+    identity = asyncio.run(import_soul(src, mind.store, mind.wiki, mind.graph, mind.skills, name=name))
+    console.print(f"soul imported: {identity.name}, autonomy {identity.level.name}, experience {identity.metrics.experience():.0f}")
+
+
+@memory_app.command("search")
+def memory_search(query: str, limit: int = 8) -> None:
+    from emeth.runtime import build_mind
+
+    settings = _settings()
+    mind = build_mind(settings)
+    pages = asyncio.run(mind.wiki.search(query, limit=limit))
+    for p in pages:
+        console.print(f"[bold]{p.title}[/] [{p.kind}] score={p.score:.3f} — {p.abstract[:120]}")
+    if not pages:
+        console.print("(no pages)")
+
+
+@memory_app.command("timeline")
+def memory_timeline(limit: int = 40) -> None:
+    from emeth.runtime import build_mind
+
+    settings = _settings()
+    mind = build_mind(settings)
+    for e in mind.store.recent_episodes(limit=limit):
+        console.print(f"{e.kind:12} {e.text}")
+
+
+@memory_app.command("graph")
+def memory_graph() -> None:
+    from emeth.runtime import build_mind
+
+    settings = _settings()
+    mind = build_mind(settings)
+    console.print(json.dumps(mind.graph.stats(), indent=2))
+    for r in mind.graph.region_summary()[:10]:
+        console.print(r)
+
+
+@skills_app.command("list")
+def skills_list() -> None:
+    from emeth.runtime import build_mind
+
+    settings = _settings()
+    mind = build_mind(settings)
+    asyncio.run(mind.skills.sync_from_disk())
+    table = Table(title="Skills")
+    for col in ("name", "uses", "success", "version", "description"):
+        table.add_column(col)
+    for r in mind.skills.records():
+        table.add_row(r.name, str(r.uses), f"{r.success_rate:.0%}", str(r.version), r.description[:80])
+    console.print(table)
+
+
+@persona_app.command("init")
+def persona_init(path: Path = typer.Argument(Path("persona.yaml"))) -> None:
+    from emeth.social.persona import save_persona_template
+
+    save_persona_template(path)
+    console.print(f"persona template written to {path}")
+
+
+@app.command()
+def design(brief: str, width: int = 9, height: int = 7, depth: int = 9) -> None:
+    """Dry-run the architect: design a structure and print its ASCII layers."""
+    from emeth.builder.designer import Designer
+    from emeth.llm.router import LLMRouter
+
+    settings = _settings()
+    router = LLMRouter.from_configs(load_providers(settings.providers_path))
+    result = asyncio.run(Designer(router).design(brief, max_size=(width, height, depth)))
+    if result.ok and result.blueprint:
+        console.print(f"[green]{result.spec.name if result.spec else result.blueprint.name}[/] — {len(result.blueprint.solid)} blocks, size {result.blueprint.size}, attempts {result.attempts}")
+        console.print(result.blueprint.ascii_layers())
+        console.print(result.blueprint.bill_of_materials())
+    else:
+        console.print(f"[red]design failed[/]: {result.error} — critiques: {result.critiques}")
+
+
+if __name__ == "__main__":
+    app()

@@ -1,0 +1,17 @@
+{
+  "id": "7f2a1c3e-0000-4000-8000-000000000002",
+  "action": "craft",
+  "ok": false,
+  "error": "cannot craft iron_pickaxe: missing 3 iron_ingot",
+  "errorCode": "MISSING_ITEM",
+  "result": {
+    "missing": [
+      {
+        "name": "iron_ingot",
+        "missing": 3
+      }
+    ]
+  },
+  "startedAt": 1700000010000,
+  "finishedAt": 1700000010120
+}

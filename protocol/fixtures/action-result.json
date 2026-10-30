@@ -1,0 +1,14 @@
+{
+  "id": "7f2a1c3e-0000-4000-8000-000000000001",
+  "action": "mine",
+  "ok": true,
+  "result": {
+    "requested": 3,
+    "mined": 3,
+    "inventoryDelta": {
+      "oak_log": 3
+    }
+  },
+  "startedAt": 1700000003000,
+  "finishedAt": 1700000009500
+}

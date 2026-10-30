@@ -1,0 +1,65 @@
+{
+  "request": {
+    "kind": "request",
+    "id": "req-1",
+    "method": "act",
+    "params": {
+      "action": "goto",
+      "args": {
+        "x": 10,
+        "y": 64,
+        "z": -3,
+        "range": 1
+      }
+    }
+  },
+  "response_ok": {
+    "kind": "response",
+    "id": "req-1",
+    "ok": true,
+    "result": {
+      "id": "7f2a1c3e-0000-4000-8000-000000000001",
+      "action": "mine",
+      "ok": true,
+      "result": {
+        "requested": 3,
+        "mined": 3,
+        "inventoryDelta": {
+          "oak_log": 3
+        }
+      },
+      "startedAt": 1700000003000,
+      "finishedAt": 1700000009500
+    }
+  },
+  "response_error": {
+    "kind": "response",
+    "id": "req-2",
+    "ok": false,
+    "error": {
+      "code": "UNKNOWN_ACTION",
+      "message": "unknown action: teleport"
+    }
+  },
+  "event_chat": {
+    "kind": "event",
+    "event": "chat",
+    "ts": 1700000012000,
+    "payload": {
+      "from": "Steve",
+      "text": "viens voir",
+      "ts": 1700000012000
+    }
+  },
+  "event_reflex": {
+    "kind": "event",
+    "event": "reflex",
+    "ts": 1700000013000,
+    "payload": {
+      "name": "defend",
+      "phase": "start",
+      "reason": "zombie at 2.5m (attacking me)",
+      "priority": 60
+    }
+  }
+}

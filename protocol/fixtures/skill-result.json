@@ -1,0 +1,33 @@
+{
+  "id": "7f2a1c3e-0000-4000-8000-000000000003",
+  "name": "gather_logs",
+  "ok": false,
+  "error": "no oak_log within 32 blocks — explore first",
+  "errorCode": "NOT_FOUND",
+  "logs": [
+    "looking for logs"
+  ],
+  "trace": [
+    {
+      "t": 12,
+      "call": "observe",
+      "ok": true,
+      "ms": 4
+    },
+    {
+      "t": 30,
+      "call": "find_blocks",
+      "ok": true,
+      "ms": 9
+    },
+    {
+      "t": 45,
+      "call": "mine",
+      "ok": false,
+      "ms": 120,
+      "error": "no oak_log within 32 blocks — explore first"
+    }
+  ],
+  "startedAt": 1700000011000,
+  "finishedAt": 1700000011200
+}
