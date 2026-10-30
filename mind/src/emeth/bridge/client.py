@@ -248,8 +248,20 @@ class BodyClient:
 SELF_REPORT_FLAGS = ("ok", "success", "succeeded", "done", "complete", "completed", "sealed", "reached", "found")
 
 
+# Primitives that only look: a program whose every successful call is one of these changed nothing in the world.
+READ_ONLY_CALLS = frozenset({"observe", "block_at", "find_blocks", "scan_region", "surface_height", "players", "ore_info", "plan_get", "plan_build", "recipes", "inventory", "container_view", "look", "look_at", "look_at_player", "wait"})
+
+
 def judge_skill_result(res: SkillRunResult) -> SkillRunResult:
-    if not res.ok or not isinstance(res.result, dict):
+    if not res.ok:
+        return res
+    acted = [t.call for t in res.trace if t.ok and t.call.split("(")[0] not in READ_ONLY_CALLS]
+    if not acted:
+        # seen live: two "escape" programs reported success while the agent had not moved a block
+        failed = [t.call for t in res.trace if not t.ok]
+        why = f"every action it tried failed ({', '.join(failed[:4])})" if failed else "it only looked around"
+        return res.model_copy(update={"ok": False, "errorCode": "NO_EFFECT", "error": f"the program changed nothing in the world: {why}"})
+    if not isinstance(res.result, dict):
         return res
     false_flags = [k for k in SELF_REPORT_FLAGS if res.result.get(k) is False]
     if not false_flags:
