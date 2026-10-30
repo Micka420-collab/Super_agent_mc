@@ -55,6 +55,7 @@ from emeth.social.persona import Persona
 log = logging.getLogger(__name__)
 
 AUDIENCE_MEMORY_S = 300.0
+WAIT_BREAKERS = ("chat", "whisper", "hurt", "death", "threat", "daybreak", "nightfall")
 
 COORD_HINT = re.compile(r"-?\d{1,5}\s*[, ]\s*-?\d{1,3}\s*[, ]\s*-?\d{1,5}")
 
@@ -156,8 +157,11 @@ class CognitiveLoop:
                     reasons = self._drain_reasons()
                 except TimeoutError:
                     reasons = ["quiet moment" if self._action_task else "idle body"]
-                if time.time() < self._wait_until and not any(r.startswith(("chat", "whisper", "hurt", "death", "threat")) for r in reasons):
+                # daybreak/nightfall end a wait too: a wait "for dawn" that outlives the dawn is how it sat out a whole
+                # morning in its shelter (seen live)
+                if time.time() < self._wait_until and not any(r.startswith(WAIT_BREAKERS) for r in reasons):
                     continue  # honouring a deliberate wait
+                self._wait_until = 0.0  # whatever comes next replaces the wait (a new `wait` sets it again)
                 try:
                     await self.think(", ".join(reasons))
                 except LLMError as exc:

@@ -144,3 +144,14 @@ def test_instinct_trusts_the_measured_enclosure_at_night(tmp_path):
     d = instinct(ctx(tmp_path, obs, skills={"emergency_shelter"}))
     assert d.action_name == "emergency_shelter"  # a shelter that was only believed in does not count
     assert "Shelter (measured now): NONE" in render_sensory(obs)
+
+
+def test_dawn_reads_as_the_end_of_the_night_and_ends_waits():
+    from emeth.cognition.loop import WAIT_BREAKERS
+    from emeth.memory.context import render_sensory
+
+    obs = sample_observation()
+    obs.world.phase = "dawn"
+    obs.world.timeOfDay = 23500
+    assert "the night is over" in render_sensory(obs)
+    assert "daybreak".startswith(WAIT_BREAKERS) and "nightfall".startswith(WAIT_BREAKERS)

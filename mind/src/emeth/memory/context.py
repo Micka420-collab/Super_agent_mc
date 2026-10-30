@@ -78,7 +78,7 @@ def render_sensory(obs: Observation, woke_by: str = "") -> str:
     elif w.phase == "night":
         time_line = f"Day {w.day}, NIGHT (dawn in ~{minutes_to(w.timeOfDay, 23000)} min) — monsters spawn in the dark"
     else:
-        time_line = f"Day {w.day}, dawn"
+        time_line = f"Day {w.day}, DAWN — the night is over, the sun is rising (full day in ~{minutes_to(w.timeOfDay, 1000)} min); monsters still out burn or leave"
     weather = " Raining." if w.isRaining else ""
     thunder = " Thunderstorm!" if w.isThundering else ""
     lines.append(f"{time_line}.{weather}{thunder} Light here {w.lightLevel:.0f}/15.")
