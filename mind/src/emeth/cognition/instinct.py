@@ -117,6 +117,9 @@ def instinct(ctx: InstinctContext) -> Decision:
     if obs.world.phase in ("dusk", "night") and not s.isSleeping:
         if _has_bed(inv) and can("sleep"):
             return Decision(reason="instinct: night is falling and I carry a bed", action_type="primitive", action_name="sleep", action_args={"waitForMorning": True})
+        enc = obs.blocks.enclosure
+        if enc is not None and enc.enclosed:
+            return Decision(reason=f"instinct: night, and I am {enc.summary} — waiting for daylight here", action_type="wait", wait_seconds=60, wait_for="daylight")
         if SHELTER_SKILL in ctx.available_skills:
             return Decision(reason="instinct: night outside, raising an emergency shelter", action_type="stored_skill", action_name=SHELTER_SKILL, action_args={})
         return Decision(reason="instinct: night outside and nothing to build with, staying put", action_type="wait", wait_seconds=60, wait_for="daylight")

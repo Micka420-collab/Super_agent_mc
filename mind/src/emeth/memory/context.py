@@ -83,6 +83,10 @@ def render_sensory(obs: Observation, woke_by: str = "") -> str:
     thunder = " Thunderstorm!" if w.isThundering else ""
     lines.append(f"{time_line}.{weather}{thunder} Light here {w.lightLevel:.0f}/15.")
     lines.append(f"Standing on {obs.blocks.standingOn}; at feet {obs.blocks.atFeet}; above head {obs.blocks.atHead}." + (f" Facing {obs.blocks.facing.name} at {obs.blocks.facing.distance:.0f}m." if obs.blocks.facing else ""))
+    enc = obs.blocks.enclosure
+    if enc is not None:
+        # measured by the body every observation: trust it over any memory of having "sealed" a shelter
+        lines.append(f"Shelter (measured now): {enc.summary}." if enc.enclosed else f"Shelter (measured now): NONE — {enc.summary}.")
     if obs.vision and obs.vision.horizon:
         horizon = ", ".join(f"{k}: {v}" for k, v in list(obs.vision.horizon.items())[:8])
         lines.append(f"In view (by direction): {horizon}")

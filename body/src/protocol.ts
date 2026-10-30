@@ -158,6 +158,8 @@ export const BlocksStateSchema = z.object({
   facing: BlockViewSchema.nullable(),
   notable: z.array(BlockViewSchema),
   nearbyCounts: z.record(z.string(), z.number()),
+  /** Is the open space around the agent closed on every side? (bounded flood fill, motor/enclosure.ts) */
+  enclosure: z.object({ enclosed: z.boolean(), cells: z.number(), roofed: z.boolean(), summary: z.string() }).optional(),
 });
 
 export const VisionStateSchema = z.object({

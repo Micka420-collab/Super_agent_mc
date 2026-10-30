@@ -78,3 +78,21 @@ describe('threat assessment', () => {
     expect(doom.nearest).toEqual({ name: 'warden', distance: 3 });
   });
 });
+
+describe('assessThreat when sealed in', () => {
+  const base = { health: 20, armor: {}, heldItem: null, offhandItem: null, phase: 'night' as const, skyLight: 15 };
+  const crowd = [{ name: 'zombie', distance: 6 }, { name: 'skeleton', distance: 8 }, { name: 'zombie', distance: 9 }];
+
+  it('a crowd outside the walls is no reason to run out into it', () => {
+    expect(assessThreat({ ...base, hostiles: crowd }).recommendation).toBe('flee');
+    const inside = assessThreat({ ...base, hostiles: crowd, enclosed: true });
+    expect(inside.danger).toBe(0);
+    expect(inside.recommendation).not.toBe('flee');
+    expect(inside.reasons).toContain('sealed in: they cannot reach me');
+  });
+
+  it('a creeper next to the wall still counts', () => {
+    const inside = assessThreat({ ...base, hostiles: [{ name: 'creeper', distance: 2 }], enclosed: true });
+    expect(inside.danger).toBeGreaterThan(0);
+  });
+});

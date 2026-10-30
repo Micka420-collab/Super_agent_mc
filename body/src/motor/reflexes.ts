@@ -18,6 +18,7 @@ import { distance } from '../util/geometry.js';
 import { equipBestWeapon } from './items.js';
 import { fleeFrom, holdControl, stopAllMovement } from './movement.js';
 import { assessThreat, type ThreatAssessment } from './threat.js';
+import { assessEnclosure, solidLookup } from './enclosure.js';
 
 export type ReflexEmitter = (payload: Record<string, unknown>) => void;
 
@@ -128,6 +129,7 @@ export class ReflexSystem {
       offhandItem: bot.inventory.slots[45]?.name ?? null,
       phase,
       skyLight: feet?.skyLight ?? 15,
+      enclosed: assessEnclosure(solidLookup(bot), bot.entity.position).enclosed,
     });
   }
 

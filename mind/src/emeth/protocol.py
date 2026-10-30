@@ -161,6 +161,13 @@ class EntitiesState(Loose):
     threat: ThreatState | None = None
 
 
+class Enclosure(Loose):
+    enclosed: bool
+    cells: int
+    roofed: bool
+    summary: str
+
+
 class BlocksState(Loose):
     standingOn: str
     atFeet: str
@@ -168,6 +175,7 @@ class BlocksState(Loose):
     facing: BlockView | None
     notable: list[BlockView]
     nearbyCounts: dict[str, int]
+    enclosure: Enclosure | None = None
 
 
 class VisionState(Loose):

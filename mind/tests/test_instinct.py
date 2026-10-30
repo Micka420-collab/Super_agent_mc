@@ -126,3 +126,21 @@ def test_instinct_is_silent_and_never_fights(tmp_path):
     for milestone in (None, "wood", "diamond", "bed"):
         d = instinct(ctx(tmp_path, obs, milestone=milestone))
         assert d.speech is None and d.action_name not in {"attack", "flee"}
+
+
+def test_instinct_trusts_the_measured_enclosure_at_night(tmp_path):
+    from emeth.memory.context import render_sensory
+    from emeth.protocol import Enclosure
+
+    obs = sample_observation()
+    obs.world.phase = "night"
+    obs.self_.food = 20
+    obs.inventory.items = []
+    obs.blocks.enclosure = Enclosure(enclosed=True, cells=2, roofed=True, summary="sealed in: 2 open cells, closed on every side")
+    d = instinct(ctx(tmp_path, obs, skills={"emergency_shelter"}))
+    assert d.action_type == "wait" and "sealed" in d.reason  # already safe: no second shelter
+    assert "Shelter (measured now): sealed in" in render_sensory(obs)
+    obs.blocks.enclosure = Enclosure(enclosed=False, cells=160, roofed=False, summary="exposed: open to the outside, monsters can walk or fall to you")
+    d = instinct(ctx(tmp_path, obs, skills={"emergency_shelter"}))
+    assert d.action_name == "emergency_shelter"  # a shelter that was only believed in does not count
+    assert "Shelter (measured now): NONE" in render_sensory(obs)

@@ -50,6 +50,8 @@ export interface ThreatInput {
   phase: 'dawn' | 'day' | 'dusk' | 'night';
   /** sky light at the feet: > 4 means outdoors */
   skyLight: number;
+  /** measured by motor/enclosure.ts: walled in on every side, nothing can walk or shoot in */
+  enclosed?: boolean;
 }
 
 export type ThreatRecommendation = 'calm' | 'watch' | 'fight' | 'retreat' | 'flee';
@@ -102,18 +104,20 @@ export function assessThreat(input: ThreatInput): ThreatAssessment {
   let pressure = 0;
   for (const h of hostiles) {
     const w = MOB_WEIGHT[h.name] ?? 1.0;
-    const f = distanceFactor(h.name, h.distance);
+    // walled in: melee mobs cannot reach and arrows need a line of sight; a creeper still blasts through walls
+    const f = distanceFactor(h.name, h.distance) * (input.enclosed ? (EXPLOSIVE_MOBS.has(h.name) ? 0.3 : 0) : 1);
     pressure += w * f;
     if (f >= 0.45) {
       const tag = EXPLOSIVE_MOBS.has(h.name) ? ' (explosive)' : RANGED_MOBS.has(h.name) ? ' (ranged)' : '';
       reasons.push(`${h.name} ${Math.round(h.distance)}m${tag}`);
     }
   }
+  if (input.enclosed) reasons.push('sealed in: they cannot reach me');
   const strength = bodyStrength(input, reasons);
   const healthFactor = Math.max(0, Math.min(1, input.health / 20));
   const capacity = strength * (0.4 + 0.6 * healthFactor);
   let danger = pressure / (capacity * 3);
-  if (input.phase === 'night' && input.skyLight > 4) {
+  if (input.phase === 'night' && input.skyLight > 4 && !input.enclosed) {
     danger += 0.1;
     reasons.push('night outside: more will come');
   }
