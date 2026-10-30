@@ -1,0 +1,28 @@
+name: EmethCompanion
+version: '${version}'
+main: dev.emeth.companion.EmethCompanion
+api-version: '1.21'
+description: "Une fenêtre dans la tête de l'agent EMETH : hologramme, affichage tête haute, menu, moniteur rétine, conseils de mentor."
+website: https://github.com/Micka420-collab/Super_agent_mc
+authors: [EMETH]
+commands:
+  emeth:
+    description: "Regarder dans la tête d'Emeth et lui parler en mentor."
+    usage: "/emeth [menu|status|hud|tell|goal|goals|journal|monitor|say|reload]"
+permissions:
+  emeth.use:
+    description: "Voir : menu, statut, affichage tête haute, journal, objectifs."
+    default: true
+  emeth.mentor:
+    description: "Conseiller l'agent et lui proposer des buts (il reste libre de décider)."
+    default: op
+  emeth.monitor:
+    description: "Recevoir des cartes-moniteurs de la rétine."
+    default: op
+  emeth.admin:
+    description: "Faire parler l'agent (say) et recharger la configuration."
+    default: op
+    children:
+      emeth.use: true
+      emeth.mentor: true
+      emeth.monitor: true
