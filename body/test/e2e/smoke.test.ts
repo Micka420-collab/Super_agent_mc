@@ -194,6 +194,46 @@ describe('body e2e (flying-squid)', () => {
     expect((cleared.result as { dug: number }).dug).toBeGreaterThanOrEqual(5);
   }, 120_000);
 
+  it('plans procurement from the live inventory and surroundings (plan_get / get)', async () => {
+    // flying-squid does not evaluate recipes server-side, so real crafting is covered by the Paper live
+    // run; here we check the wiring: inventory → planner, nearby table detection, no-op and honest failure.
+    const bot = runtime!.bot;
+    const Item = createRequire(import.meta.url)('prismarine-item')(bot.registry) as new (id: number, count: number) => unknown;
+    for (let slot = 36; slot <= 44; slot++) await bot.creative.setInventorySlot(slot, null as never);
+    await bot.creative.setInventorySlot(36, new Item(bot.registry.itemsByName['oak_log']!.id, 8) as never);
+    await bot.creative.setInventorySlot(37, new Item(bot.registry.itemsByName['crafting_table']!.id, 1) as never);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(bot.inventory.items().map((i) => i.name).sort()).toEqual(['crafting_table', 'oak_log']);
+
+    const dry = await runtime!.runner.run({ action: 'plan_get', args: { name: 'wooden_pickaxe' } });
+    expect(dry.ok, JSON.stringify(dry)).toBe(true);
+    const plan = dry.result as { feasible: boolean; steps: { kind: string; item: string; count: number }[]; text: string };
+    expect(plan.feasible).toBe(true);
+    expect(plan.steps.map((s) => `${s.kind}:${s.item}`)).toEqual(['place_table:crafting_table', 'craft:oak_planks', 'craft:stick', 'craft:wooden_pickaxe']);
+    expect(plan.text).toContain('wooden_pickaxe');
+
+    // once a table really stands next to us, the planner sees it and drops the placement step
+    const base = bot.entity.position.floored();
+    const placed = await runtime!.runner.run({ action: 'place', args: { name: 'crafting_table', x: base.x + 2, y: base.y, z: base.z + 2 } });
+    expect(placed.ok, JSON.stringify(placed)).toBe(true);
+    const withTable = await runtime!.runner.run({ action: 'plan_get', args: { name: 'wooden_pickaxe' } });
+    expect((withTable.result as typeof plan).steps.map((s) => s.kind)).toEqual(['craft', 'craft', 'craft']);
+
+    // already owned → nothing to do
+    await bot.creative.setInventorySlot(38, new Item(bot.registry.itemsByName['wooden_pickaxe']!.id, 1) as never);
+    await new Promise((r) => setTimeout(r, 300));
+    const owned = await runtime!.runner.run({ action: 'get', args: { name: 'wooden_pickaxe' } });
+    expect(owned.ok, JSON.stringify(owned)).toBe(true);
+    expect(owned.result).toMatchObject({ done: true, have: 1, steps: 0, executed: [] });
+
+    // honest failure: no spider on this empty superflat world, so string is out of reach
+    const string = await runtime!.runner.run({ action: 'get', args: { name: 'string' } });
+    expect(string.ok).toBe(false);
+    expect(string.errorCode).toBe('MISSING_ITEM');
+    expect(string.error).toMatch(/spider/);
+    await runtime!.runner.run({ action: 'dig', args: { x: base.x + 2, y: base.y, z: base.z + 2, collect: false } });
+  }, 120_000);
+
   it('executes a sandboxed skill that uses the live api', async () => {
     const res = await runSkill(
       {

@@ -4,6 +4,7 @@
 import './movement.js';
 import './mining.js';
 import './crafting.js';
+import './procure.js';
 import './building.js';
 import './combat.js';
 import './inventory.js';

@@ -44,6 +44,7 @@ Avant de pousser : les deux suites passent, `ruff`/`mypy`/`tsc` propres, fixture
 | Nouveau fournisseur LLM | `mind/src/emeth/llm/` (adapter `Provider`) + `config.DEFAULT_PROVIDERS` |
 | Nouveau jalon de survie | `cognition/planner.py::LADDER` (+ spec vérifiable dans `check_success`) |
 | Nouvelle primitive d'architecte | `builder/dsl.py` + `builder/compiler.py` + test |
+| Nouvelle source d'item (cuisson, mob, cueillette) | `body/src/motor/procurement.ts` (`SMELTING`, `MOB_SOURCES`, `GATHER_HINTS`, `NATURAL_BLOCKS`) + cas dans `body/test/procurement.test.ts` |
 
 ## Conventions
 - TypeScript : ESM, `strict`, `noUncheckedIndexedAccess`, pas de `any` sauf frontière mineflayer (caster via `unknown`).

@@ -28,7 +28,7 @@ index.ts ─ createBody ─┬─ Observer (perception/observer.ts)   observatio
   Aucune dépendance native. La légende couleur→bloc et la description texte sont dérivées des mêmes rayons.
 
 ### Motricité
-- 45 primitives déclarées avec zod (`actions/*.ts`) → un **manifeste** JSON-schema et une **doc d'API de skills**
+- 51 primitives déclarées avec zod (`actions/*.ts`) → un **manifeste** JSON-schema et une **doc d'API de skills**
   générés depuis la même source. Catégories : movement, mining, crafting, building, combat, inventory, social, survival,
   perception, meta. Chaque primitive renvoie un résultat structuré (`inventoryDelta`, `placed/skipped/failures`,
   `missing: [{name, missing}]`…) et lève des `BodyError` codés (`MISSING_ITEM`, `NO_PATH`, `TIMEOUT`, `INTERRUPTED`…).
@@ -41,6 +41,15 @@ index.ts ─ createBody ─┬─ Observer (perception/observer.ts)   observatio
   cassés en chemin (coffres, tables, verre). Pose de blocs : recherche de face de référence, `GoalPlaceBlock`, sneak,
   vérification. Craft : table trouvée/craftée/posée automatiquement, feedback des ingrédients manquants ; four : choix du
   combustible, attente bornée, sortie récupérée.
+- **Approvisionnement** (`motor/procurement.ts`, `actions/procure.ts`) : `plan_get` compile « item → arbre de
+  dépendances » depuis `minecraft-data` (recettes via prismarine-recipe, `blockLoot`, `entityLoot`, `harvestTools`) en
+  reculant depuis l'item voulu : inventaire → bloc brut (outil minimal inséré avant) → cuisson (+ four) → mob curé →
+  recette la moins chère (coût des ingrédients, pénalité famille/teinture, ancêtres interdits, allers-retours de blocs de
+  stockage exclus) → loot de mob → « acquérir » avec indice. Le plan est compacté par `mergeSteps` uniquement quand
+  `isFeasible` (simulation d'inventaire pas à pas) le prouve. `get` exécute l'étape de tête avec les primitives
+  ordinaires (`mine`/`craft`/`smelt`/`attack`/`explore`), **replanifie depuis l'inventaire réel après chaque étape**,
+  explore deux fois au plus quand une source manque, détecte les étapes qui stagnent et s'arrête avec le plan restant
+  (`MISSING_ITEM`) plutôt que de boucler. Testé contre un monde simulé (`test/procure.test.ts`).
 
 ### Skills (code généré)
 1. `analyzeSkill` (acorn) : exige `async function main(api, args)`, interdit `require/import/process/globalThis/eval/

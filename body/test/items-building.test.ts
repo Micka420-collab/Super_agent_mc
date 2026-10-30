@@ -4,7 +4,8 @@ import type { Bot } from 'mineflayer';
 import { bestWeapon, materialRank, normalizeName, resolveBlockNames, resolveItemNames } from '../src/motor/items.js';
 import { billOfMaterials, orderPlacements } from '../src/actions/building.js';
 import { splitChat, sanitizeChat } from '../src/actions/social.js';
-import { inventoryDelta } from '../src/actions/mining.js';
+import { inventoryDelta, isHarvestable } from '../src/actions/mining.js';
+import type { ActionContext } from '../src/actions/registry.js';
 import { classifyEntity, isThreat } from '../src/perception/entities.js';
 
 const registry = minecraftData('1.21.11');
@@ -61,6 +62,16 @@ describe('building helpers', () => {
 
   it('computes a bill of materials', () => {
     expect(billOfMaterials([{ name: 'Oak Planks', x: 0, y: 0, z: 0 }, { name: 'oak_planks', x: 1, y: 0, z: 0 }, { name: 'glass', x: 2, y: 0, z: 0 }])).toEqual({ oak_planks: 2, glass: 1 });
+  });
+
+  it('only harvests ripe crops', () => {
+    const ctx = { bot: fakeBot() } as unknown as ActionContext;
+    const block = (name: string, age?: number) => ({ name, getProperties: () => (age === undefined ? {} : { age }) }) as never;
+    expect(isHarvestable(ctx, block('wheat', 7))).toBe(true);
+    expect(isHarvestable(ctx, block('wheat', 3))).toBe(false);
+    expect(isHarvestable(ctx, block('beetroots', 3))).toBe(true);
+    expect(isHarvestable(ctx, block('stone'))).toBe(true);
+    expect(isHarvestable(ctx, block('oak_log', 0))).toBe(true);
   });
 
   it('computes inventory deltas', () => {

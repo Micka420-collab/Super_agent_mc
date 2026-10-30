@@ -12,7 +12,7 @@ docs, CI.
 - [ ] Corriger les primitives à l'épreuve du réel (pose de blocs sur pente, four, collecte des drops).
 
 ## M2 — Compétence
-- [ ] Planificateur d'approvisionnement déterministe (item → arbre de dépendances via recettes) exposé comme primitive `get`.
+- [x] Planificateur d'approvisionnement déterministe (item → arbre de dépendances via recettes, loot tables et outils requis), compacté avec preuve de faisabilité, exposé comme primitives `plan_get` (gratuit) et `get` (exécute et replanifie à chaque étape) — 30 oct. 2026.
 - [ ] Skills de base livrés dans `skills/library/` (bûches, abri d'urgence, torches, mine en escalier sûre, retour à la base).
 - [ ] Construction réelle via `Designer` → `build` avec relevé de site (`surface_height`) et récolte des matériaux manquants.
 - [ ] Évaluateur `@miner-org/mineflayer-baritone` vs `mineflayer-pathfinder` (natation, échelles, parkour).

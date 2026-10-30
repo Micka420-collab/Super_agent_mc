@@ -190,7 +190,13 @@ defineAction({
       if (!r) break;
       const remaining = target - countItem(bot, def.name);
       const crafts = Math.max(1, Math.min(Math.ceil(remaining / r.result.count), 16));
-      await raceAbort(bot.craft(r, crafts, table ?? undefined), ctx.signal, { timeoutMs: 20_000 });
+      await raceAbort(bot.craft(r, crafts, table ?? undefined), ctx.signal, {
+        timeoutMs: 20_000,
+        // a stuck craft leaves ingredients in the grid: closing the window makes the server hand them back
+        onCancel: () => {
+          if (bot.currentWindow) bot.closeWindow(bot.currentWindow);
+        },
+      });
       crafted += crafts * r.result.count;
       await sleep(80, ctx.signal);
     }

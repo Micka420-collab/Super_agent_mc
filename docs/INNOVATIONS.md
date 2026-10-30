@@ -60,31 +60,37 @@ Le modèle choisit parmi 45 primitives au contrat strict (manifeste généré), 
 multi-étapes, et le code ne peut appeler que ces mêmes primitives. Les erreurs sont codées (`MISSING_ITEM` avec la liste
 exacte) : la correction est mécanique, pas une devinette.
 
+### 11. Planificateur d'approvisionnement avec preuve de faisabilité
+L'idée du `TaskCatalogue` d'AltoClef, reconstruite sur `minecraft-data` (recettes, loot tables des blocs et des mobs,
+outils de récolte) : `get <item>` devient un plan ordonné — mine → table → outils → four → chasse — sans LLM. Deux
+choses que les autres ne font pas : le plan est **compacté** (une seule sortie minage pour 11 cobblestone, un seul lot
+de planches) seulement si une simulation d'inventaire prouve que chaque étape a ses entrées au moment où elle s'exécute
+(`isFeasible`), et il est **recalculé après chaque étape** depuis l'inventaire réel, donc un mob qui fuit ou un filon
+plus petit que prévu ne déraille rien. Il préfère l'essence de bois que le corps *voit*, refuse les allers-retours de
+blocs de stockage (bloc de fer → lingots), n'est pas dupe des recettes de teinture, et déclare honnêtement ce qu'il ne
+sait pas obtenir. `mine` ne récolte que les cultures mûres, comme un joueur patient.
+
 ## Conçu, à coder ensuite (voir ROADMAP)
 
-### 11. Sandbox d'imagination (jumeau du monde)
+### 12. Sandbox d'imagination (jumeau du monde)
 Avant un plan risqué (descente en mine, traversée de lave, grosse construction), **répéter** le plan sur une copie locale du
 monde : `prismarine-world` + `prismarine-physics` permettent de simuler les déplacements et les poses de blocs sans
 envoyer un paquet, à vitesse accélérée ; variante lourde : un serveur headless avec la **même seed** (la génération est
 déterministe) pour vérifier qu'un trajet existe. Personne ne fait de planification basée modèle avec un simulateur exact.
 
-### 12. Boucle vocale complète
+### 13. Boucle vocale complète
 L'API Simple Voice Chat expose `MicrophonePacketEvent` (micro des joueurs → PCM) et `createAudioSender(connection)`
 (simuler le micro d'un joueur **sans le mod**, donc parfait pour un compte bot). Plugin serveur → WebSocket → Whisper →
 esprit → TTS (Kokoro local ou API) → voix du bot. Toutes les pièces existent, aucune intégration publique.
 
-### 13. Récap vidéo quotidien
+### 14. Récap vidéo quotidien
 HyperFrames rend du HTML en vidéo déterministe en batch. Timeline + frames de rétine + stats du jour → `rows.json` →
 template → mp4 : l'agent publie son propre vlog.
 
-### 14. Façade MCP
+### 15. Façade MCP
 Exposer l'agent comme serveur MCP (`observe`, `say`, `set_goal`, `memory_search`, `render`) : Claude Desktop ou Codex
 peuvent le conseiller, le « posséder », ou l'utiliser comme outil dans d'autres workflows ; et inversement l'esprit peut
 consommer d'autres serveurs MCP (wiki, météo du serveur, Discord).
-
-### 15. Planificateur d'approvisionnement déterministe
-Porter l'idée du `TaskCatalogue` d'AltoClef : item → arbre de dépendances (mine → table → outils → four…) compilé depuis
-les recettes `minecraft-data`, exécuté par les primitives, sans LLM. « get diamond_pickaxe » devient un plan vérifiable.
 
 ### 16. Mémoire de style architectural
 `scan_region` sur les constructions des joueurs → extraction de palettes et de formes → une « culture » du serveur que

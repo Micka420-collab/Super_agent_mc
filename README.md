@@ -19,7 +19,7 @@ Dépôt : `Micka420-collab/Super_agent_mc`. Monorepo : un **corps** TypeScript (
             │  corps (body/, TypeScript/Mineflayer)                                     │
             │  perception honnête (FOV, raycast) · rétine (image du POV sans GPU)      │
             │  réflexes au tick (lave, noyade, fuite, creeper, défense, faim)          │
-            │  45 primitives · sandbox de skills JS (acorn → worker → vm) · bridge      │
+            │  51 primitives · sandbox de skills JS (acorn → worker → vm) · bridge      │
             └───────────────────────────────▲──────────────────────────────────────────┘
                                              │ protocole Minecraft (joueur normal)
                                    serveur Minecraft (Paper / vanilla, 1.21.x – 26.1)

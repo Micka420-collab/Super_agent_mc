@@ -31,6 +31,19 @@ export function canHarvest(ctx: ActionContext, block: Block): { ok: boolean; nee
   return { ok: false, needed: ids.map((id) => bot.registry.items[id]?.name ?? String(id)) };
 }
 
+/**
+ * Crops only drop their produce when fully grown (loot tables gate on `blockAge`). A real player waits;
+ * so do we: immature crops are not candidates for `mine`.
+ */
+export function isHarvestable(ctx: ActionContext, block: Block): boolean {
+  const loot = (ctx.bot.registry as unknown as { blockLoot?: Record<string, { drops: { blockAge?: number }[] }> }).blockLoot?.[block.name];
+  const ages = loot?.drops.map((d) => d.blockAge).filter((a): a is number => a !== undefined) ?? [];
+  if (!ages.length) return true;
+  const props = (block as unknown as { getProperties?: () => Record<string, unknown> }).getProperties?.() ?? {};
+  const age = Number(props['age']);
+  return Number.isFinite(age) ? age >= Math.max(...ages) : true;
+}
+
 async function digBlock(ctx: ActionContext, block: Block): Promise<void> {
   const bot = ctx.bot;
   await goToBlock(bot, block.position, ctx.signal);
@@ -56,8 +69,8 @@ defineAction({
     const names = resolveBlockNames(bot, a.name);
     if (!names.length) throw new BodyError(ErrorCodes.NOT_FOUND, `unknown block: ${a.name}`);
     const nameSet = new Set(names);
-    const positions = bot.findBlocks({ matching: (b) => nameSet.has(b.name), maxDistance: a.maxDistance, count: Math.max(a.count * 4, 16) });
-    if (!positions.length) throw new BodyError(ErrorCodes.NOT_FOUND, `no ${a.name} within ${a.maxDistance} blocks — explore first`);
+    const positions = bot.findBlocks({ matching: (b) => nameSet.has(b.name) && isHarvestable(ctx, b), maxDistance: a.maxDistance, count: Math.max(a.count * 4, 16) });
+    if (!positions.length) throw new BodyError(ErrorCodes.NOT_FOUND, `no ${a.name} within ${a.maxDistance} blocks (ripe, if it is a crop) — explore or wait`);
     const blocks = positions
       .map((p) => bot.blockAt(p))
       .filter((b): b is Block => !!b)
