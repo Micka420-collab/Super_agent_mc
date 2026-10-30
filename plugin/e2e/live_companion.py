@@ -77,7 +77,10 @@ def paper_jar() -> Path:
     if not jar.exists():
         jar.parent.mkdir(parents=True, exist_ok=True)
         print(f"downloading {PAPER['file']} …", flush=True)
-        urllib.request.urlretrieve(PAPER["url"], jar)  # noqa: S310 - fixed https URL, checksum verified below
+        # PaperMC's download service refuses generic clients (Python-urllib → 403): identify the project
+        req = urllib.request.Request(PAPER["url"], headers={"User-Agent": "emeth-companion-e2e/0.1 (+https://github.com/Micka420-collab/Super_agent_mc)"})
+        with urllib.request.urlopen(req, timeout=120) as resp, jar.open("wb") as fh:  # noqa: S310 - fixed https URL, checksum verified below
+            shutil.copyfileobj(resp, fh)
     digest = hashlib.sha256(jar.read_bytes()).hexdigest()
     if digest != PAPER["sha256"]:
         raise SystemExit(f"{jar}: sha256 {digest} does not match the pinned Paper build")
