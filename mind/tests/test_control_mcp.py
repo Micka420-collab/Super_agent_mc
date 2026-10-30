@@ -191,3 +191,22 @@ def test_observation_summary_is_readable():
     text = summarize_observation(obs)
     assert "Emeth at (10, 64, -3)" in text and "day 3 dusk" in text and "Steve" in text and "Hostiles in view: 2" in text and "6 oak_log" in text
     assert summarize_observation({}) == "observation (see JSON)"
+
+
+async def test_dashboard_and_health_are_served_on_the_control_port(mind_and_world):
+    import httpx
+
+    mind, world = mind_and_world
+    base = f"http://127.0.0.1:{mind.control.port}"
+    async with httpx.AsyncClient() as http:
+        page = await http.get(base + "/")
+        assert page.status_code == 200 and "text/html" in page.headers["content-type"]
+        assert "EMETH" in page.text and "memory_search" in page.text and "tell" in page.text
+        assert (await http.get(base + "/healthz")).text.strip() == "ok"
+        assert (await http.get(base + "/nope")).status_code == 404
+    # the decision log tail is exposed for the dashboard's cost view
+    log = mind.settings.data_dir / "logs" / "decisions.jsonl"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text('{"ts": 1, "provider": "brain", "purpose": "decision", "cost_usd": 0.001}\nnot json\n{"ts": 2, "provider": "brain", "purpose": "critic", "cost_usd": 0.0}\n')
+    rows = await ControlAPI(mind).dispatch("decisions", {"limit": 5})
+    assert [r["purpose"] for r in rows] == ["decision", "critic"]

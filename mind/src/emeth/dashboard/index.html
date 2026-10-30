@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EMETH — dans la tête</title>
+<style>
+  :root { --bg:#0e1116; --panel:#161b22; --line:#2a313b; --fg:#d6dde6; --dim:#8a94a3; --acc:#5dd0a1; --warn:#e3b341; --bad:#f0616d; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { display:flex; align-items:center; gap:16px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:2; }
+  header h1 { font-size:16px; margin:0; letter-spacing:.08em; }
+  header .meta { color:var(--dim); font-family:var(--mono); font-size:12px; }
+  header .dot { width:10px; height:10px; border-radius:50%; background:var(--bad); display:inline-block; margin-right:6px; }
+  header .dot.on { background:var(--acc); }
+  main { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:12px; padding:12px 16px; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px; min-height:120px; }
+  section h2 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:var(--dim); }
+  .wide { grid-column:1 / -1; }
+  .bars { display:grid; grid-template-columns:90px 1fr 42px; gap:4px 8px; align-items:center; font-size:13px; }
+  .bar { height:8px; background:#0b0e13; border-radius:4px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:var(--acc); }
+  .bar i.warn { background:var(--warn); } .bar i.bad { background:var(--bad); }
+  .num { font-family:var(--mono); color:var(--dim); text-align:right; }
+  #retina { width:100%; image-rendering:pixelated; border-radius:6px; background:#000; aspect-ratio:16/9; }
+  .desc { color:var(--dim); font-size:12px; margin-top:6px; }
+  ul.timeline { list-style:none; margin:0; padding:0; max-height:360px; overflow:auto; font-family:var(--mono); font-size:12px; }
+  ul.timeline li { padding:3px 0; border-bottom:1px dashed var(--line); }
+  ul.timeline .k { color:var(--acc); margin-right:6px; } ul.timeline .k.said, ul.timeline .k.chat_in { color:var(--warn); } ul.timeline .k.damage, ul.timeline .k.death { color:var(--bad); } ul.timeline .k.mentor_in { color:#9bb8ff; }
+  textarea, input { width:100%; background:#0b0e13; color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:8px; font:inherit; }
+  textarea { min-height:64px; resize:vertical; }
+  button { background:var(--acc); color:#06241a; border:0; border-radius:6px; padding:7px 12px; font-weight:600; cursor:pointer; margin-top:6px; }
+  button.ghost { background:transparent; color:var(--fg); border:1px solid var(--line); }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .row > * { flex:1; }
+  pre { margin:0; font-family:var(--mono); font-size:12px; white-space:pre-wrap; color:var(--fg); }
+  .muted { color:var(--dim); }
+  .pill { display:inline-block; padding:1px 8px; border-radius:10px; border:1px solid var(--line); font-family:var(--mono); font-size:11px; margin:2px 4px 2px 0; }
+  .pill.ok { border-color:var(--acc); } .pill.off { border-color:var(--bad); color:var(--bad); }
+  #memres { max-height:260px; overflow:auto; }
+  .mem { border-left:2px solid var(--line); padding:4px 8px; margin:6px 0; }
+  .mem b { color:var(--acc); }
+  .toast { position:fixed; right:16px; bottom:16px; background:var(--panel); border:1px solid var(--line); padding:8px 12px; border-radius:8px; font-size:12px; display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>EMETH</h1>
+  <span class="meta"><span class="dot" id="dot"></span><span id="conn">connexion…</span></span>
+  <span class="meta" id="who"></span>
+  <span class="meta" id="where"></span>
+  <span class="meta" style="margin-left:auto" id="cost"></span>
+</header>
+<main>
+  <section>
+    <h2>Corps</h2>
+    <div class="bars">
+      <span>Santé</span><div class="bar"><i id="hp"></i></div><span class="num" id="hpn">–</span>
+      <span>Faim</span><div class="bar"><i id="food"></i></div><span class="num" id="foodn">–</span>
+      <span>Expérience</span><div class="bar"><i id="xp"></i></div><span class="num" id="xpn">–</span>
+    </div>
+    <div class="desc" id="bodyline">—</div>
+    <div class="desc" id="last">—</div>
+  </section>
+  <section>
+    <h2>Pulsions</h2>
+    <div class="bars" id="drives"></div>
+  </section>
+  <section>
+    <h2>Rétine</h2>
+    <img id="retina" alt="ce qu'il voit">
+    <div class="desc" id="retdesc">—</div>
+  </section>
+  <section>
+    <h2>Buts</h2>
+    <pre id="goals">—</pre>
+    <div class="row" style="margin-top:8px">
+      <input id="goalTitle" placeholder="suggérer un but (il décide comment, il peut refuser)">
+      <button id="goalBtn" style="flex:0 0 auto">Suggérer</button>
+    </div>
+  </section>
+  <section class="wide">
+    <h2>Mentor — lui parler hors du jeu</h2>
+    <div class="row">
+      <textarea id="tell" placeholder="Un conseil, une mise en garde, une question. Il le pèsera à sa prochaine pensée — ce n'est pas un ordre."></textarea>
+      <div style="flex:0 0 160px">
+        <input id="source" value="Micka" title="qui parle">
+        <button id="tellBtn" style="width:100%">Lui dire</button>
+        <button id="sayBtn" class="ghost" style="width:100%" title="faire dire ce texte dans le chat du jeu (240 car. max)">Faire dire en jeu</button>
+      </div>
+    </div>
+  </section>
+  <section class="wide">
+    <h2>Timeline</h2>
+    <ul class="timeline" id="timeline"></ul>
+  </section>
+  <section>
+    <h2>Mémoire</h2>
+    <div class="row"><input id="memq" placeholder="chercher dans sa mémoire (lieux, leçons, gens…)"><button id="memBtn" style="flex:0 0 auto">Chercher</button></div>
+    <div id="memres"></div>
+  </section>
+  <section>
+    <h2>Esprit (LLM)</h2>
+    <div id="router"></div>
+    <pre id="stats" class="muted"></pre>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+(() => {
+  const qs = new URLSearchParams(location.search);
+  const token = qs.get('token') || sessionStorage.getItem('emeth-token') || prompt('Jeton du canal de contrôle (data/control.token)');
+  if (token) { try { sessionStorage.setItem('emeth-token', token); } catch {} }
+  if (qs.has('token')) history.replaceState(null, '', location.pathname); // keep the token out of the address bar / history
+  const $ = (id) => document.getElementById(id);
+  const wsUrl = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/?token=' + encodeURIComponent(token || '');
+  let ws = null, nextId = 1; const pending = new Map();
+  const toast = (msg, bad) => { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; t.style.borderColor = bad ? 'var(--bad)' : 'var(--acc)'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500); };
+
+  function call(method, params) {
+    return new Promise((resolve, reject) => {
+      if (!ws || ws.readyState !== 1) return reject(new Error('déconnecté'));
+      const id = String(nextId++);
+      pending.set(id, { resolve, reject });
+      ws.send(JSON.stringify({ id, method, params: params || {} }));
+      setTimeout(() => { if (pending.delete(id)) reject(new Error(method + ': délai dépassé')); }, 60000);
+    });
+  }
+  function connect() {
+    ws = new WebSocket(wsUrl);
+    ws.onopen = () => { $('dot').classList.add('on'); $('conn').textContent = 'connecté'; tick(); };
+    ws.onclose = (e) => { $('dot').classList.remove('on'); $('conn').textContent = e.code === 4401 ? 'jeton refusé' : 'déconnecté — nouvel essai…'; if (e.code !== 4401) setTimeout(connect, 2000); };
+    ws.onmessage = (ev) => {
+      const msg = JSON.parse(ev.data); const p = pending.get(msg.id); if (!p) return; pending.delete(msg.id);
+      msg.ok ? p.resolve(msg.result) : p.reject(new Error((msg.error || {}).code + ': ' + (msg.error || {}).message));
+    };
+  }
+
+  const pct = (v, max) => Math.max(0, Math.min(100, Math.round(100 * v / max)));
+  const cls = (v, max) => (v / max < 0.3 ? 'bad' : v / max < 0.6 ? 'warn' : '');
+  function setBar(id, v, max, label) { const el = $(id); el.style.width = pct(v, max) + '%'; el.className = cls(v, max); $(id + 'n').textContent = label; }
+
+  async function tick() {
+    if (!ws || ws.readyState !== 1) return;
+    try {
+      const st = await call('status');
+      $('who').textContent = `${st.name} · ${st.autonomy.stage} (niv. ${st.autonomy.level}, xp ${st.autonomy.experience})`;
+      if (st.self) {
+        const s = st.self; const p = s.position;
+        $('where').textContent = `(${Math.round(p.x)}, ${Math.round(p.y)}, ${Math.round(p.z)}) ${s.dimension} · jour ${s.day} ${s.phase}`;
+        setBar('hp', s.health, 20, s.health + '/20'); setBar('food', s.food, 20, s.food + '/20');
+      }
+      setBar('xp', Math.min(st.autonomy.experience, 100), 100, String(st.autonomy.experience));
+      $('xp').className = '';
+      $('bodyline').textContent = `corps ${st.body.connected ? 'connecté' : 'déconnecté'} · ${st.body.actions} primitives` + (st.body.minecraft ? ` · MC ${st.body.minecraft.version || ''} @ ${st.body.minecraft.host || ''}` : '');
+      $('last').textContent = 'dernier résultat : ' + (st.last_result || '—');
+      const d = st.drives || {}; const names = { safety: 'sécurité', hunger: 'faim', rest: 'repos', curiosity: 'curiosité', social: 'social', mastery: 'maîtrise', order: 'ordre', mood: 'humeur' };
+      $('drives').innerHTML = Object.keys(names).filter(k => k in d).map(k => `<span>${names[k]}</span><div class="bar"><i style="width:${pct(d[k], 1)}%;background:${k === 'mood' ? 'var(--acc)' : d[k] > 0.75 ? 'var(--bad)' : d[k] > 0.5 ? 'var(--warn)' : 'var(--acc)'}"></i></div><span class="num">${d[k].toFixed(2)}</span>`).join('');
+      const stats = st.stats || {}; $('stats').textContent = `décisions ${stats.decisions ?? 0} · actions ${stats.actions ?? 0} · skills ${stats.skills ?? 0} · paroles ${stats.speeches ?? 0} · rêves ${stats.dreams ?? 0} · erreurs ${stats.errors ?? 0}`;
+      let cost = 0, pills = [];
+      for (const [pid, h] of Object.entries(st.router || {})) { cost += h.cost_usd || 0; pills.push(`<span class="pill ${h.available ? 'ok' : 'off'}" title="${h.last_error || ''}">${pid} · ${h.breaker} · ${h.calls} appels · ${h.avg_latency_ms} ms</span>`); }
+      $('router').innerHTML = pills.join('') || '<span class="muted">aucun fournisseur</span>';
+      $('cost').textContent = cost ? `coût $${cost.toFixed(4)}` : '';
+      const goals = await call('goals'); $('goals').textContent = goals.text || '—';
+      const tl = await call('timeline', { limit: 60 });
+      $('timeline').innerHTML = tl.map(e => `<li><span class="k ${e.kind}">${e.kind}</span>${esc(e.text)}${e.count > 1 ? ` <span class="muted">×${e.count}</span>` : ''}</li>`).join('');
+      const list = $('timeline'); list.scrollTop = list.scrollHeight;
+      if (st.body.connected) {
+        const fr = await call('render', { width: 96, height: 54 });
+        $('retina').src = 'data:image/png;base64,' + fr.pngBase64; $('retdesc').textContent = fr.description;
+      }
+    } catch (e) { $('conn').textContent = 'erreur : ' + e.message; }
+    finally { setTimeout(tick, 2000); }
+  }
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  $('tellBtn').onclick = async () => { const text = $('tell').value.trim(); if (!text) return; try { await call('tell', { text, source: $('source').value.trim() || 'mentor' }); $('tell').value = ''; toast('transmis — il y pensera à sa prochaine décision'); } catch (e) { toast(e.message, true); } };
+  $('sayBtn').onclick = async () => { const text = $('tell').value.trim(); if (!text) return; try { await call('say', { text: text.slice(0, 240) }); $('tell').value = ''; toast('dit en jeu'); } catch (e) { toast(e.message, true); } };
+  $('goalBtn').onclick = async () => { const title = $('goalTitle').value.trim(); if (!title) return; try { await call('set_goal', { title, source: $('source').value.trim() || 'mentor' }); $('goalTitle').value = ''; toast('but suggéré'); } catch (e) { toast(e.message, true); } };
+  $('memBtn').onclick = async () => {
+    const q = $('memq').value.trim(); if (!q) return;
+    try {
+      const r = await call('memory_search', { query: q, limit: 8 });
+      $('memres').innerHTML = [...r.pages.map(p => `<div class="mem"><b>${esc(p.kind)}</b> ${esc(p.title)}<div class="muted">${esc(p.abstract || p.body.slice(0, 200))}</div></div>`), ...r.episodes.map(e => `<div class="mem"><b>épisode</b> ${esc(e.text)}</div>`)].join('') || '<div class="muted">rien</div>';
+    } catch (e) { toast(e.message, true); }
+  };
+  $('memq').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('memBtn').click(); });
+  connect();
+})();
+</script>
+</body>
+</html>

@@ -45,10 +45,10 @@ Tout a été vérifié contre l'état de l'art d'octobre 2026 (voir [`docs/RESEA
 ## État du projet (30 oct. 2026)
 
 - ✅ Corps complet, typé, **77 tests** (69 unitaires + 8 e2e sur un vrai serveur Minecraft JS 1.21.1 : spawn, pathfinding, minage, pose et construction, planification d'approvisionnement, skill live, bridge authentifié), 51 primitives.
-- ✅ Esprit complet, **39 tests** (routeur, mémoire, cognition, builder, boucle de bout en bout avec un corps simulé, canal de contrôle et façade MCP), `ruff` + `mypy` propres.
+- ✅ Esprit complet, **40 tests** (routeur, mémoire, cognition, builder, boucle de bout en bout avec un corps simulé, canal de contrôle et façade MCP), `ruff` + `mypy` propres.
 - ✅ Chaîne complète validée en direct (`mind/scripts/live_smoke.py`) : corps réel ↔ esprit ↔ MCP (regarder, parler au mentor, répondre dans le jeu).
 - ⏳ Pas encore validé sur un serveur Paper avec de vraies clés LLM : c'est l'étape suivante (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)).
-- ⏳ Voix (Simple Voice Chat), dashboard, récap vidéo (HyperFrames), multi-agents : conçus, pas encore codés.
+- ⏳ Voix (Simple Voice Chat), récap vidéo (HyperFrames), sandbox d'imagination, multi-agents : conçus, pas encore codés.
 
 ## Démarrage rapide
 
@@ -89,6 +89,11 @@ claude mcp add emeth -- emeth mcp        # l'esprit doit tourner (`emeth run`) ;
 Outils : `emeth_status`, `emeth_observe`, `emeth_look` (sa rétine en image), `emeth_memory_search`, `emeth_timeline`,
 `emeth_goals`, `emeth_skills`, puis `emeth_tell` (un conseil qu'il pèsera à sa prochaine pensée), `emeth_suggest_goal`,
 `emeth_say`. Rien ne le télécommande : vous êtes son mentor, pas sa manette (ADR-0006).
+
+### Regarder dans sa tête (tableau de bord)
+Pendant qu'il tourne : `http://127.0.0.1:8766/?token=$(cat mind/data/control.token)` — santé, pulsions, rétine en
+direct, buts, timeline, mémoire, coûts LLM, et la même boîte « mentor » que l'outil MCP. Une page servie par l'esprit,
+rien à installer.
 
 ## Comment il pense (une décision)
 

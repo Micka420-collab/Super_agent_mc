@@ -76,8 +76,9 @@ L'agent est un serveur MCP (`emeth mcp`, sans dépendance) : depuis Claude Code,
 yeux (`emeth_look` renvoie la rétine en image), on fouille sa mémoire et sa timeline, on lit ses buts — et on lui
 **parle** (`emeth_tell`). Ce qui est dit arrive dans sa pensée suivante comme un bloc `[MENTOR]`, pesé comme le conseil
 d'un ami, consommé une fois, et laisse un épisode `mentor_in` dans sa mémoire : il peut remercier, ignorer, discuter.
-Aucun outil ne commande le corps. C'est la relation maître/apprenti plutôt que la manette, et c'est aussi le canal que
-le tableau de bord utilisera (`ControlAPI`, ADR-0006). Prochaine étape naturelle : l'esprit consommant à son tour
+Aucun outil ne commande le corps. C'est la relation maître/apprenti plutôt que la manette. Le **tableau de bord
+« dans la tête »** vit sur le même canal : santé, pulsions, rétine en direct, buts, timeline, mémoire, coûts LLM et la
+même boîte « mentor », servi par l'esprit lui-même à `http://127.0.0.1:8766/` (une page, zéro build). Prochaine étape naturelle : l'esprit consommant à son tour
 d'autres serveurs MCP (wiki du serveur, Discord) comme des sens supplémentaires.
 
 ## Conçu, à coder ensuite (voir ROADMAP)
@@ -114,25 +115,21 @@ est lisible par les humains et persiste dans le monde.
 Chaque nuit, un banc d'essai (tâches type MineCollab/TeamCraft) sur une seed neuve, avec l'âme importée vs un agent neuf :
 on mesure ce qui se transfère vraiment (le trou pointé par MC-EvoBench) et on régresse si un changement casse l'apprentissage.
 
-### 20. Tableau de bord « dans la tête »
-Protocole WebSocket localhost (style AgentCraft) : blocs de contexte, pulsions, graphe, rétine en direct, décisions avec
-leur coût. Indispensable pour déboguer un agent qui vit 24 h/24.
-
 ## Recherche
 
-### 21. World model appris sur ses propres yeux
+### 20. World model appris sur ses propres yeux
 La rétine fournit des frames basse résolution **cohérentes** et des actions discrètes : un jeu de données parfait pour
 entraîner un petit modèle de monde latent (JEPA / Dreamer) et donner à l'agent une imagination approximative là où le
 jumeau exact (n° 11) est trop coûteux. Pont naturel avec le travail LatentBridge (LLM gelé + modèle de monde).
 
-### 22. Langage corporel et voix émotionnelle
+### 21. Langage corporel et voix émotionnelle
 Les pulsions pilotent déjà l'humeur ; les brancher sur la prosodie TTS, le sneak quand il a peur, le regard vers
 l'interlocuteur (déjà une primitive), le pas de recul face à un inconnu.
 
-### 23. Économie et droit
+### 22. Économie et droit
 Propriété (coffres marqués), échanges avec les joueurs (le troc villageois est déjà supporté par le corps), contrats
 sous forme de livres signés, réputation sociale déjà modélisée (confiance). Les agents deviennent des citoyens.
 
-### 24. Amendements de valeurs sous tutelle
+### 23. Amendements de valeurs sous tutelle
 L'agent peut **proposer** une révision de ses valeurs/ambitions à partir de son récit (il le fait déjà pour les ambitions) ;
 le propriétaire valide. Une identité qui grandit sans dériver.

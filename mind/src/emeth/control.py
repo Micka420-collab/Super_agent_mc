@@ -16,7 +16,10 @@ import asyncio
 import json
 import logging
 import secrets
+from collections import deque
 from dataclasses import asdict, is_dataclass
+from http import HTTPStatus
+from importlib import resources
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlsplit
@@ -133,6 +136,25 @@ class ControlAPI:
     async def m_skills(self) -> list[dict[str, Any]]:
         return [_jsonable(r) for r in self.mind.skills.records()]
 
+    async def m_decisions(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Tail of the LLM call log (provider, purpose, latency, tokens, cost) — what thinking costs."""
+        limit = max(1, min(200, int(limit)))
+        path = self.mind.settings.data_dir / "logs" / "decisions.jsonl"
+        if not path.exists():
+            return []
+        tail: deque[str] = deque(maxlen=limit)
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip():
+                    tail.append(line)
+        out: list[dict[str, Any]] = []
+        for line in tail:
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return out
+
     # --- influence (never commands: the agent remains the one deciding) ---------------------
     async def m_say(self, text: str, to: str | None = None) -> dict[str, Any]:
         text = text.strip()
@@ -193,7 +215,7 @@ class ControlServer:
     async def start(self) -> None:
         from websockets.asyncio.server import serve
 
-        self._server = await serve(self._handle, self.host, self.port, max_size=16 * 1024 * 1024)
+        self._server = await serve(self._handle, self.host, self.port, max_size=16 * 1024 * 1024, process_request=self._http)
         # port 0 → learn the real one
         sockets = getattr(self._server, "sockets", None) or []
         if sockets:
@@ -205,6 +227,20 @@ class ControlServer:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
+
+    def _http(self, connection: Any, request: Any) -> Any:
+        """Plain HTTP on the same port: the dashboard at `/`, a health probe at `/healthz`; WebSocket upgrades pass through."""
+        if "upgrade" in str(request.headers.get("Connection", "")).lower() or request.headers.get("Upgrade"):
+            return None
+        path = urlsplit(request.path).path
+        if path == "/healthz":
+            return connection.respond(HTTPStatus.OK, "ok\n")
+        if path in ("/", "/index.html"):
+            response = connection.respond(HTTPStatus.OK, dashboard_html())
+            response.headers["Content-Type"] = "text/html; charset=utf-8"
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        return connection.respond(HTTPStatus.NOT_FOUND, "not found\n")
 
     def _authorized(self, path: str | None) -> bool:
         query = parse_qs(urlsplit(path or "").query)
@@ -237,6 +273,11 @@ class ControlServer:
             except Exception as exc:  # noqa: BLE001
                 log.exception("control method %s failed", method)
                 await ws.send(json.dumps({"id": rid, "ok": False, "error": {"code": "INTERNAL", "message": str(exc)[:300]}}))
+
+
+def dashboard_html() -> str:
+    """The single-file dashboard shipped with the package (served by the control server at `/`)."""
+    return resources.files("emeth.dashboard").joinpath("index.html").read_text(encoding="utf-8")
 
 
 class ControlClient:

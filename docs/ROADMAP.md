@@ -20,7 +20,7 @@ docs, CI.
 
 ## M3 — Présence
 - [x] Façade MCP de l'esprit (`emeth mcp`, ADR-0006) : status/observe/look/memory_search/timeline/goals/skills + tell (mentor)/suggest_goal/say, sur un canal de contrôle local réutilisable par le tableau de bord — validée en direct (30 oct. 2026).
-- [ ] Tableau de bord web sur le canal de contrôle (`ControlAPI`) : contexte, pulsions, graphe, rétine, coûts.
+- [x] Tableau de bord « dans la tête » servi par le canal de contrôle (`http://127.0.0.1:8766/?token=…`) : corps, pulsions, rétine en direct, buts, timeline, mémoire, coûts LLM, et la boîte « mentor » — une page, zéro build (30 oct. 2026). Reste : graphe de monde et journal des décisions détaillé.
 - [ ] Boucle vocale : plugin Simple Voice Chat → WS → Whisper → esprit → TTS → `createAudioSender`.
 - [ ] Récap vidéo quotidien (HyperFrames) depuis la timeline + frames de rétine.
 
@@ -35,5 +35,5 @@ docs, CI.
 - [ ] Survie 7 jours en **Normal** sans intervention, documentée.
 - [ ] Article + vidéo.
 
-## Idées en attente (voir `docs/INNOVATIONS.md` 21–24)
+## Idées en attente (voir `docs/INNOVATIONS.md` 20–23)
 World model appris sur la rétine (LatentBridge), voix émotionnelle, économie/droit, amendements de valeurs sous tutelle.

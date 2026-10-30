@@ -141,7 +141,9 @@ abandon_goal, wake`). Rien ne court-circuite l'agent : `tell` dépose un bloc `[
 conseil pesé, consommé une fois, journalisé `mentor_in`), `set_goal` empile un but que l'agent peut abandonner avec
 une raison, `say` passe par le corps comme toute parole. `emeth mcp` traduit ce canal en serveur **MCP stdio** (écrit
 à la main, sans dépendance) : dix outils `emeth_*`, dont `emeth_look` qui renvoie la rétine en image. Claude Code :
-`claude mcp add emeth -- emeth mcp`.
+`claude mcp add emeth -- emeth mcp`. Le même port sert en HTTP le **tableau de bord** (`/`, une page HTML embarquée
+dans le paquet, `/healthz`) : il ouvre le WebSocket avec le jeton et interroge `status/goals/timeline/render` toutes
+les 2 s ; la boîte « mentor » appelle `tell`/`say`/`set_goal`.
 
 ## 3. Protocole & tests croisés
 `protocol/fixtures/*.json` est généré par le corps (`npx tsx src/tools/gen-fixtures.ts`) à partir d'un bot simulé et
