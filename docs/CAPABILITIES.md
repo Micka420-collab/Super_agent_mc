@@ -28,7 +28,33 @@ elle a été observée sur un vrai serveur avec un vrai modèle ; un échec rest
 | Construction (`design` → cottage) | non testé | |
 | Dialogue avec un joueur, plugin compagnon en jeu | non testé | aucun joueur humain pendant la session |
 
-## Défauts trouvés en vrai et corrigés pendant la session
+## Session 2 — 30 oct. 2026, avec un joueur
+
+- **Cadre** : même monde et même modèle, serveur ouvert sur le réseau local au seul PC du propriétaire, plugin
+  compagnon chargé. Le propriétaire (Micka) joue à côté.
+- **Durée et coût** : 100 min réelles, environ cinq jours de jeu, 152 appels pour 0,218 $, soit 0,13 $/h. Sept
+  redéploiements à chaud pour livrer les correctifs ci-dessous.
+- **Dialogue** : 33 messages d'EMETH et 4 du joueur.
+
+| Capacité | Résultat | Détail |
+|---|---|---|
+| Saluer un joueur qui arrive, répondre dans le chat | ✅ après correctif | le salut restait intérieur (joueur hors de vue) ; réponses en quelques secondes ensuite |
+| Tenir compte d'un conseil (« cherche plus loin ») | ✅ | il le pèse et refuse de sortir de nuit sans armure, en le disant |
+| Reprendre à l'aube | ✅ après correctif | il a d'abord passé une matinée à « attendre l'aube » ; dès le jour suivant : « Le jour est là » et il part |
+| Sortir d'un abri souterrain vers une cible à 64 m | ⚠️ | `goto` immobile pendant 120 s ; ajout de `ascend` et d'un chien de garde à 25 s |
+| Fer caché derrière la pierre → `raw_iron` | ✅ après correctif | `mine` disait « miné » alors que le bloc était intact ; il creuse maintenant jusqu'au minerai |
+| Fondre le fer, four, cisailles | ✅ | jalon `furnace`, cisailles faites seul (un conseil du mentor pour situer le fer) |
+| Plugin compagnon en jeu (HUD, `/emeth`) | ✅ | connecté ; il restait déconnecté après chaque redémarrage de l'esprit, c'est corrigé |
+| Abri la nuit | ✅ | nuits passées enfermé, sans dégât |
+| Lit (laine) | ❌ | cisailles en main, mais aucun mouton trouvé pour l'instant |
+
+Défauts trouvés et corrigés : parole perdue avec un joueur hors de vue (`world.online`) ; jeton de contrôle
+régénéré à chaque démarrage ; l'aube et les conseils de mentor ignorés pendant une attente ; un programme qui
+rapportait `sealed: false` gardé comme compétence vérifiée ; aucune primitive pour remonter (`ascend`) ; `goto`
+qui brûlait 120 s sans bouger ; `mine` qui comptait des blocs non cassés et ne savait pas creuser jusqu'au
+minerai ; `smelt iron_ingot` refusé ; établi ou four injoignable au lieu d'en poser un neuf.
+
+## Défauts trouvés en vrai et corrigés pendant la session 1
 
 1. **Arguments vides** : en sortie structurée, un objet sans propriétés ne peut valoir que `{}`. Les décisions et
    les skills passent désormais par `args_json` (chaîne JSON).
@@ -49,6 +75,6 @@ elle a été observée sur un vrai serveur avec un vrai modèle ; un échec rest
 
 - Nourriture : poursuivre un animal repéré loin (`explore` l'a trouvé à 91 m, aucune décision ne l'a suivi),
   `attack` sur les petites cibles mobiles.
-- `goto` qui expire près du but : reprendre au plus proche atteint plutôt que d'abandonner.
-- Session avec un joueur : dialogue, conseils, plugin compagnon en jeu.
+- Trouver des animaux loin de la base (moutons, vaches) : `explore` voit loin mais ne poursuit pas.
+- Le plugin compilé sans Gradle : Gradle 8.14 ne tourne pas sur Java 25 (passer au wrapper 9.x).
 - Session longue (plusieurs heures) : dérive de la mémoire, coût réel avec le rêve.
