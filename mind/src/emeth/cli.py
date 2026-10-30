@@ -153,6 +153,23 @@ def doctor() -> None:
             console.print(f"[yellow]Body not reachable[/] at {settings.bridge_url}: {exc}")
 
     asyncio.run(ping())
+
+    async def control() -> None:
+        from emeth.control import ControlClient, ControlError
+
+        token_path = settings.control_token_path()
+        token = settings.control_token or (token_path.read_text(encoding="utf-8").strip() if token_path.exists() else "")
+        url = f"ws://{settings.control_host}:{settings.control_port}"
+        if not token:
+            console.print(f"[dim]No running mind yet (no control token at {token_path}); `emeth run` creates one.[/]")
+            return
+        try:
+            status = await ControlClient(url, token, timeout_s=5).call("status")
+            console.print(f"[green]Mind running[/] at {url}: {status['name']} ({status['autonomy']['stage']}), body {'connected' if status['body']['connected'] else 'disconnected'} — dashboard {url.replace('ws://', 'http://')}/?token=… · MCP: `claude mcp add emeth -- emeth mcp`")
+        except ControlError as exc:
+            console.print(f"[dim]No mind answering at {url} ({exc.code}); start it with `emeth run`.[/]")
+
+    asyncio.run(control())
     console.print(f"data dir: {settings.data_dir.resolve()} — skills: {Path(settings.skills_dir).resolve()}")
 
 

@@ -52,6 +52,7 @@ Tout a été vérifié contre l'état de l'art d'octobre 2026 (voir [`docs/RESEA
 - ⏳ Voix (Simple Voice Chat), récap vidéo (HyperFrames), sandbox d'imagination, multi-agents : conçus, pas encore codés.
 
 ## Démarrage rapide
+Le guide détaillé de la première session sur un vrai serveur est dans [`docs/FIRST_RUN.md`](docs/FIRST_RUN.md).
 
 Prérequis : Node ≥ 20, Python ≥ 3.11, un serveur Minecraft **1.21.x ou 26.1** (Mineflayer 4.39 s'arrête à 26.1 ; pour
 26.2/26.3 mettez [ViaProxy](https://github.com/ViaVersion/ViaProxy) devant) en `online-mode=false` pour un compte bot

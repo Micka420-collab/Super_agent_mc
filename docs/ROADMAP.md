@@ -4,7 +4,7 @@
 Corps Mineflayer complet et testé (unitaires + e2e sur serveur JS), esprit complet et testé hors ligne, protocole partagé,
 docs, CI.
 
-## M1 — Première vie sur un vrai serveur (prochain)
+## M1 — Première vie sur un vrai serveur (prochain) — guide : `docs/FIRST_RUN.md`
 - [ ] Serveur Paper 1.21.11 (`server/docker-compose.yml`), bot hors-ligne, clés LLM → session de 1 h observée.
 - [ ] Calibrer : fréquence des réveils, longueur du contexte (tokens/décision), coût/heure par tier. Point de départ hors ligne : `emeth prompt-stats` (système ≈ 3,1 k tokens cachés + 0,4–6 k de contexte, ≤ 1,2 k en sortie).
 - [ ] Première tâche de l'échelle (6 bûches → planches → table → pioche) bouclée **sans aide**, puis nuit en abri.
