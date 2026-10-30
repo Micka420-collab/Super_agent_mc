@@ -2,8 +2,11 @@ import { z } from 'zod';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
 import { BodyError, ErrorCodes } from '../protocol.js';
-import { goToBlock } from '../motor/movement.js';
-import { equipBestTool, inventorySummary, resolveBlockNames, type ItemSummary } from '../motor/items.js';
+import { DEFAULT_PROFILE, goTo, goToBlock, type MovementProfile } from '../motor/movement.js';
+import { equipBestTool, findItem, hasFreeSlot, inventorySummary, resolveBlockNames, type ItemSummary } from '../motor/items.js';
+import { assessSite, cardinalFromYaw, stairStep, summariseOres, tunnelStep, type BlockLookup, type Cardinal, type Course, type NamedCell } from '../motor/digging.js';
+import { describeOre, miningAdvice } from '../motor/ores.js';
+import { placeBlockAt } from '../motor/placing.js';
 import { raceAbort, sleep, throwIfAborted } from '../util/async.js';
 import { distance } from '../util/geometry.js';
 import { defineAction, type ActionContext } from './registry.js';
@@ -57,7 +60,7 @@ defineAction({
   name: 'mine',
   category: 'mining',
   description:
-    'Find and mine blocks by name (fuzzy: "log" matches every log type), collecting the drops. Fails with MISSING_TOOL when a better pickaxe is required.',
+    'Find and mine blocks by name (fuzzy: "log" matches every log type), collecting the drops. Fails with MISSING_TOOL when a better pickaxe is required, NOT_FOUND when none is in range (for ores the error says which depth to `descend` to).',
   longRunning: true,
   schema: z.object({
     name: z.string().describe('block name, e.g. "oak_log", "iron_ore", "stone"'),
@@ -70,7 +73,11 @@ defineAction({
     if (!names.length) throw new BodyError(ErrorCodes.NOT_FOUND, `unknown block: ${a.name}`);
     const nameSet = new Set(names);
     const positions = bot.findBlocks({ matching: (b) => nameSet.has(b.name) && isHarvestable(ctx, b), maxDistance: a.maxDistance, count: Math.max(a.count * 4, 16) });
-    if (!positions.length) throw new BodyError(ErrorCodes.NOT_FOUND, `no ${a.name} within ${a.maxDistance} blocks (ripe, if it is a crop) — explore or wait`);
+    if (!positions.length) {
+      const advice = miningAdvice(names, bot.entity.position.y, String(bot.game?.dimension ?? 'overworld'));
+      const hint = advice.move === 'descend' || advice.move === 'ascend' ? ` — ${advice.reason}: use \`descend\` to Y ${advice.targetY}` : advice.move === 'elsewhere' ? ` — ${advice.reason}` : ' (ripe, if it is a crop) — explore, or `tunnel` if it is an ore';
+      throw new BodyError(ErrorCodes.NOT_FOUND, `no ${a.name} within ${a.maxDistance} blocks${hint}`, { advice });
+    }
     const blocks = positions
       .map((p) => bot.blockAt(p))
       .filter((b): b is Block => !!b)
@@ -158,5 +165,212 @@ defineAction({
       }
     }
     return { approached: picked, inventoryDelta: inventoryDelta(before, inventorySummary(bot)) };
+  },
+});
+
+// ---------------------------------------------------------------------------------------------
+// Digging courses: a staircase down to a depth, a branch-mine tunnel at this level
+// ---------------------------------------------------------------------------------------------
+const AIR_NAMES = new Set(['air', 'cave_air', 'void_air']);
+/** Moving along a course we just dug: never let the pathfinder dig or parkour, every cell is already open. */
+const COURSE_PROFILE: MovementProfile = { ...DEFAULT_PROFILE, canDig: false, allowParkour: false, allow1by1towers: false };
+const DIRECTION = z.enum(['north', 'south', 'east', 'west']);
+
+interface CourseOptions {
+  kind: 'stair' | 'tunnel';
+  direction?: Cardinal;
+  steps: number;
+  toY?: number;
+  torchEvery: number;
+  minHealth: number;
+  mineOres: boolean;
+}
+
+export interface CourseResult {
+  kind: 'stair' | 'tunnel';
+  direction: Cardinal;
+  steps: number;
+  from: { x: number; y: number; z: number };
+  end: { x: number; y: number; z: number };
+  /** descend only: the requested depth was reached */
+  reachedTarget: boolean;
+  torches: number;
+  /** ores noticed on the walls/floor/ceiling along the way, by name */
+  oresSeen: Record<string, number>;
+  oresMined: number;
+  hazards: NamedCell[];
+  stoppedBecause: string;
+  inventoryDelta: Record<string, number>;
+}
+
+/** Break one cell until it is air (gravity blocks above keep refilling it: dig, wait, dig again). */
+async function clearCell(ctx: ActionContext, cell: { x: number; y: number; z: number }, expectFalling: boolean): Promise<number> {
+  const bot = ctx.bot;
+  let broken = 0;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    throwIfAborted(ctx.signal);
+    const block = bot.blockAt(new Vec3(cell.x, cell.y, cell.z));
+    if (!block || AIR_NAMES.has(block.name)) return broken;
+    if (block.hardness === -1 || block.name === 'bedrock') throw new BodyError(ErrorCodes.BAD_REQUEST, `${block.name} cannot be broken`);
+    await equipBestTool(bot, block);
+    await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true);
+    await raceAbort(bot.dig(block, true), ctx.signal, { timeoutMs: 30_000, onCancel: () => bot.stopDigging() });
+    broken += 1;
+    await sleep(expectFalling ? 400 : 60, ctx.signal);
+  }
+  return broken;
+}
+
+function requirePickaxe(ctx: ActionContext): void {
+  if (!ctx.bot.inventory.items().some((i) => i.name.endsWith('_pickaxe'))) {
+    throw new BodyError(ErrorCodes.MISSING_TOOL, 'a pickaxe is needed to dig a course through stone', { needed: ['wooden_pickaxe'] });
+  }
+}
+
+/**
+ * Dig a course step by step: survey (`assessSite`), clear the cells top-down, step in, mine the ores the walls
+ * expose, light the way, and stop with a precise reason the moment the survey says no.
+ */
+export async function digCourse(ctx: ActionContext, o: CourseOptions): Promise<CourseResult> {
+  const bot = ctx.bot;
+  requirePickaxe(ctx);
+  const direction = o.direction ?? cardinalFromYaw(bot.entity.yaw);
+  const origin = bot.entity.position.floored();
+  const lookup: BlockLookup = (x, y, z) => bot.blockAt(new Vec3(x, y, z))?.name ?? null;
+  const before = inventorySummary(bot);
+  const oresSeen = new Map<string, NamedCell>();
+  const hazards: NamedCell[] = [];
+  let steps = 0;
+  let torches = 0;
+  let oresMined = 0;
+  let reachedTarget = false;
+  let stoppedBecause = o.kind === 'stair' ? `dug ${o.steps} steps` : `tunnel of ${o.steps} blocks complete`;
+  let feet = { x: origin.x, y: origin.y, z: origin.z };
+  let behind = feet;
+
+  for (let i = 1; i <= o.steps; i++) {
+    throwIfAborted(ctx.signal);
+    const course: Course = o.kind === 'stair' ? stairStep(origin, direction, i) : tunnelStep(origin, direction, i);
+    if (o.kind === 'stair' && o.toY !== undefined && course.feet.y < o.toY) {
+      reachedTarget = true;
+      stoppedBecause = `reached Y ${feet.y}`;
+      break;
+    }
+    const report = assessSite(lookup, course);
+    for (const ore of report.ores) oresSeen.set(`${ore.x},${ore.y},${ore.z}`, ore);
+    if (!report.ok) {
+      hazards.push(...report.hazards);
+      stoppedBecause = report.stop ?? 'survey refused the next step';
+      break;
+    }
+    for (const cell of [...course.clear].reverse()) await clearCell(ctx, cell, report.falling.length > 0);
+    try {
+      await goTo(bot, { x: course.feet.x + 0.5, y: course.feet.y, z: course.feet.z + 0.5 }, 0.6, ctx.signal, { timeoutMs: 12_000, profile: COURSE_PROFILE });
+    } catch (err) {
+      if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+      stoppedBecause = `could not step into the next cell: ${(err as Error).message}`;
+      break;
+    }
+    behind = feet;
+    feet = course.feet;
+    steps += 1;
+
+    if (o.mineOres) {
+      // walls and ceiling only: opening the floor would drop us into whatever is below
+      for (const ore of report.ores.filter((c) => c.y >= course.feet.y)) {
+        throwIfAborted(ctx.signal);
+        const stillThere = bot.blockAt(new Vec3(ore.x, ore.y, ore.z));
+        if (!stillThere || stillThere.name !== ore.name) continue;
+        if (!canHarvest(ctx, stillThere).ok) continue;
+        oresMined += await clearCell(ctx, ore, false);
+        ctx.progress(`mined ${ore.name} from the wall`, { ore });
+      }
+    }
+    if (i % o.torchEvery === 0 && findItem(bot, 'torch')) {
+      try {
+        await placeBlockAt(bot, 'torch', behind, ctx.signal);
+        torches += 1;
+      } catch (err) {
+        if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+        ctx.log.debug({ err }, 'no spot for a torch here');
+      }
+    }
+    ctx.progress(`${o.kind === 'stair' ? 'descending' : 'tunnelling'} ${direction}: step ${i}/${o.steps}, Y ${feet.y}`, { feet, oresSeen: oresSeen.size });
+    if (bot.health < o.minHealth) {
+      stoppedBecause = `health ${bot.health} below ${o.minHealth}`;
+      break;
+    }
+    if (!hasFreeSlot(bot)) {
+      stoppedBecause = 'inventory full';
+      break;
+    }
+  }
+  if (o.kind === 'stair' && o.toY !== undefined && feet.y <= o.toY) reachedTarget = true;
+  await sleep(300, ctx.signal);
+  return {
+    kind: o.kind,
+    direction,
+    steps,
+    from: { x: origin.x, y: origin.y, z: origin.z },
+    end: feet,
+    reachedTarget,
+    torches,
+    oresSeen: summariseOres([...oresSeen.values()]),
+    oresMined,
+    hazards,
+    stoppedBecause,
+    inventoryDelta: inventoryDelta(before, inventorySummary(bot)),
+  };
+}
+
+defineAction({
+  name: 'descend',
+  category: 'mining',
+  description:
+    'Dig a safe 1-wide staircase down to a target Y (surveying every step for lava, water, holes, gravel and unloaded chunks, lighting it with torches, mining ores exposed on the way). The way to reach ore depths: diamonds/redstone Y -58, gold -16, lapis 0, iron 16, copper 48. Stops with the reason and the exact position when it cannot continue safely.',
+  longRunning: true,
+  schema: z.object({
+    toY: z.number().int().min(-64).max(320).describe('the Y level to stand at when done'),
+    direction: DIRECTION.optional().describe('defaults to where I am looking'),
+    torchEvery: z.number().int().min(2).max(32).default(6),
+    minHealth: z.number().min(0).max(20).default(8),
+    maxSteps: z.number().int().min(1).max(400).default(200),
+    mineOres: z.boolean().default(true),
+  }),
+  async run(ctx, a) {
+    const y = Math.floor(ctx.bot.entity.position.y);
+    if (y <= a.toY) return { kind: 'stair', steps: 0, reachedTarget: true, stoppedBecause: `already at Y ${y}, at or below ${a.toY}`, end: ctx.bot.entity.position.floored(), oresSeen: {} };
+    const steps = Math.min(a.maxSteps, y - a.toY);
+    return digCourse(ctx, { kind: 'stair', direction: a.direction, steps, toY: a.toY, torchEvery: a.torchEvery, minHealth: a.minHealth, mineOres: a.mineOres });
+  },
+});
+
+defineAction({
+  name: 'tunnel',
+  category: 'mining',
+  description:
+    'Branch-mine: dig a straight 1×2 tunnel at this level for `length` blocks, surveying every step (lava, water, drops, gravel), mining the ores exposed on the walls and ceiling, placing torches. Use it at the right depth (see `descend`) to find ores that are not in sight.',
+  longRunning: true,
+  schema: z.object({
+    length: z.number().int().min(1).max(64).default(16),
+    direction: DIRECTION.optional().describe('defaults to where I am looking'),
+    torchEvery: z.number().int().min(2).max(32).default(8),
+    minHealth: z.number().min(0).max(20).default(8),
+    mineOres: z.boolean().default(true),
+  }),
+  run: (ctx, a) => digCourse(ctx, { kind: 'tunnel', direction: a.direction, steps: a.length, torchEvery: a.torchEvery, minHealth: a.minHealth, mineOres: a.mineOres }),
+});
+
+defineAction({
+  name: 'ore_info',
+  category: 'mining',
+  description: 'Where an ore generates (Y span, best level) and whether to descend from here. Free, no movement.',
+  longRunning: false,
+  schema: z.object({ name: z.string().describe('ore or item name, e.g. "diamond", "iron_ore"') }),
+  async run(ctx, a) {
+    const names = resolveBlockNames(ctx.bot, a.name.endsWith('_ore') || a.name === 'ancient_debris' ? a.name : `${a.name}_ore`);
+    const all = names.length ? names : resolveBlockNames(ctx.bot, a.name);
+    const advice = miningAdvice(all, ctx.bot.entity.position.y, String(ctx.bot.game?.dimension ?? 'overworld'));
+    return { blocks: all.slice(0, 4), info: all.map(describeOre).find((d) => d !== null) ?? null, advice, currentY: Math.floor(ctx.bot.entity.position.y) };
   },
 });
