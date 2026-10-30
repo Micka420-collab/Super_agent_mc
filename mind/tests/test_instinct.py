@@ -157,3 +157,28 @@ def test_dawn_reads_as_the_end_of_the_night_and_ends_waits():
     assert "daybreak".startswith(WAIT_BREAKERS) and "nightfall".startswith(WAIT_BREAKERS)
     # advice from the owner (plugin, dashboard, MCP) promises to wake the next thought: a wait must not swallow it
     assert "mentor:plugin".startswith(WAIT_BREAKERS) and "player joined: Micka".startswith(WAIT_BREAKERS)
+
+
+def test_instinct_replaces_a_lost_pickaxe_first(tmp_path):
+    obs = sample_observation()
+    obs.world.phase = "day"
+    obs.self_.food = 20
+    obs.inventory.items = [ItemStack(name="cobblestone", count=64, slot=0), ItemStack(name="stick", count=2, slot=1)]
+    c = ctx(tmp_path, obs)
+    c.planner.done_milestones.add("wood_pickaxe")  # it had one: this is a worn-out pickaxe, not a newborn
+    d = instinct(c)
+    assert d.action_name == "get" and d.action_args == {"name": "stone_pickaxe", "count": 1}
+    obs.inventory.items = [ItemStack(name="stone_pickaxe", count=1, slot=0)]
+    assert instinct(c).action_args.get("name") != "stone_pickaxe"
+
+
+def test_tool_wear_and_missing_pickaxe_are_in_the_context():
+    from emeth.memory.context import render_inventory
+
+    obs = sample_observation()
+    obs.self_.heldItem = None
+    obs.inventory.items = [ItemStack(name="stone_pickaxe", count=1, slot=0, durability=9, maxDurability=131)]
+    assert "almost worn out (9 uses left)" in render_inventory(obs)
+    obs.inventory.items = [ItemStack(name="cobblestone", count=64, slot=0), ItemStack(name="stick", count=2, slot=1)]
+    text = render_inventory(obs)
+    assert "NO PICKAXE" in text and "you carry what a stone_pickaxe needs" in text

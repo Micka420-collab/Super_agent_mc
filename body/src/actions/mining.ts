@@ -203,12 +203,22 @@ defineAction({
   category: 'mining',
   description: 'Break the block at exact coordinates (walks there first).',
   longRunning: true,
-  schema: z.object({ x: z.number().int(), y: z.number().int(), z: z.number().int(), collect: z.boolean().default(true) }),
+  schema: z.object({
+    x: z.number().int(),
+    y: z.number().int(),
+    z: z.number().int(),
+    collect: z.boolean().default(true),
+    byHand: z.boolean().default(false).describe('break it even without the right tool (slow, drops nothing) — only to escape'),
+  }),
   async run(ctx, a) {
     const bot = ctx.bot;
     const block = bot.blockAt(new Vec3(a.x, a.y, a.z));
     if (!block || block.name === 'air') throw new BodyError(ErrorCodes.NOT_FOUND, 'nothing to dig there');
     if (!bot.canDigBlock(block) && block.hardness === -1) throw new BodyError(ErrorCodes.BAD_REQUEST, `${block.name} cannot be broken`);
+    const harvest = canHarvest(ctx, block);
+    if (!harvest.ok && !a.byHand) {
+      throw new BodyError(ErrorCodes.MISSING_TOOL, `${block.name} needs one of ${harvest.needed?.slice(0, 3).join(', ')}: by hand it takes ages and drops nothing — make the tool first`, { needed: harvest.needed });
+    }
     const before = inventorySummary(bot);
     await digBlock(ctx, block);
     if (a.collect) {

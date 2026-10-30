@@ -54,6 +54,13 @@ export function buildMovements(bot: Bot, profile: MovementProfile = DEFAULT_PROF
     const def = bot.registry.blocksByName[name];
     if (def) m.blocksCantBreak.add(def.id);
   }
+  // a player does not punch through stone: blocks that need a tool I do not carry are walls, not doors
+  // (seen live: a worn-out pickaxe, then a path dug through stone by hand, 7 s a block, nothing dropping)
+  const carried = new Set(bot.inventory.items().map((i) => i.type));
+  for (const def of Object.values(bot.registry.blocksByName) as Array<{ id: number; harvestTools?: Record<string, boolean> }>) {
+    const tools = def.harvestTools ? Object.keys(def.harvestTools).map(Number) : null;
+    if (tools && tools.length && !tools.some((id) => carried.has(id))) m.blocksCantBreak.add(def.id);
+  }
   // mineflayer-pathfinder types declare scafoldingBlocks as number[] (item ids)
   m.scafoldingBlocks = profile.scaffoldingBlocks
     .map((n) => bot.registry.itemsByName[n]?.id)

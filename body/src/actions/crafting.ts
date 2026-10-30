@@ -98,6 +98,11 @@ export function describeRecipes(ctx: ActionContext, name: string, count = 1, tab
 }
 
 /** Find a crafting table nearby, or place one from the inventory (crafting it from planks if possible). */
+function canMakeTable(bot: ActionContext['bot']): boolean {
+  const items = bot.inventory.items();
+  return items.some((i) => i.name.endsWith('_planks') && i.count >= 4) || items.some((i) => i.name.endsWith('_log'));
+}
+
 export async function ensureCraftingTable(ctx: ActionContext, maxDistance = 32): Promise<Block> {
   const bot = ctx.bot;
   const tableId = bot.registry.blocksByName['crafting_table']?.id;
@@ -113,6 +118,11 @@ export async function ensureCraftingTable(ctx: ActionContext, maxDistance = 32):
       // one rather than walking for a minute (seen live: `craft furnace` timed out walking to the old table)
       ctx.progress(`the crafting table at ${existing.position} is out of reach: setting up one here`);
     }
+  }
+  if (!findItem(bot, 'crafting_table') && existing && !canMakeTable(bot)) {
+    // no way to make a new one: the old table is worth the long walk after all
+    await goToBlock(bot, existing.position, ctx.signal, 90_000);
+    return existing;
   }
   if (!findItem(bot, 'crafting_table')) {
     // try to craft one from planks (2x2 recipe, no table needed)
