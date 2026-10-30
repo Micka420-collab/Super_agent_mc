@@ -14,7 +14,7 @@ docs, CI.
 ## M2 — Compétence
 - [x] Planificateur d'approvisionnement déterministe (item → arbre de dépendances via recettes, loot tables et outils requis), compacté avec preuve de faisabilité, exposé comme primitives `plan_get` (gratuit) et `get` (exécute et replanifie à chaque étape) — 30 oct. 2026.
 - [x] Skills de base livrés dans `skills/library/` : `gather_logs`, `bootstrap_tools`, `emergency_shelter`, `torches` (via `get`), `safe_staircase_mine` (relevé lave/eau/gravier avant chaque marche, torches, arrêt santé), `return_home` (puits 1×1 prudent pour sortir de terre, puis marche).
-- [~] Construction réelle via `Designer` → `build` avec relevé de site (`surface_height`) et récolte des matériaux manquants (`build {procure: true}` appelle le planificateur pour chaque matériau manquant — reste à valider sur Paper).
+- [x] Construction réelle : décision `design {brief}` → `Constructor` (relevé de site `surface_height`, architecte DSL avec budget indicatif, ancrage devant l'agent, `plan_build` — ordre prouvé, blocs flottants/enfermés/occupés —, `build {procure: true, partial: true}`), lieu + page projet en mémoire. Validé contre le corps simulé ; à confirmer sur Paper.
 - [ ] Évaluateur `@miner-org/mineflayer-baritone` vs `mineflayer-pathfinder` (natation, échelles, parkour).
 - [ ] ViaProxy documenté pour 26.2/26.3 ; test e2e sur 26.1.
 

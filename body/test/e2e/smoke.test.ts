@@ -168,9 +168,17 @@ describe('body e2e (flying-squid)', () => {
     const single = await runtime!.runner.run({ action: 'place', args: { name: 'stone', x: base.x + 3, y: base.y, z: base.z + 3 } });
     expect(single.ok, JSON.stringify(single)).toBe(true);
     expect(bot.blockAt(new Vec3(base.x + 3, base.y, base.z + 3))?.name).toBe('stone');
-    // a 3x2 wall, bottom-up
+    // a 3x2 wall, bottom-up — the dry run first: feasible, proven order, materials in hand; a floating block is refused
     const blocks = [];
     for (let dx = 0; dx < 3; dx++) for (let dy = 0; dy < 2; dy++) blocks.push({ name: 'stone', x: base.x - 3 + dx, y: base.y + dy, z: base.z - 3 });
+    const dry = await runtime!.runner.run({ action: 'plan_build', args: { blocks: [...blocks, { name: 'stone', x: base.x + 10, y: base.y + 6, z: base.z + 10 }] } });
+    expect(dry.ok, JSON.stringify(dry)).toBe(true);
+    const bp = dry.result as { feasible: boolean; order: unknown[]; unsupported: unknown[]; missing: Record<string, number>; text: string };
+    expect(bp.feasible).toBe(false);
+    expect(bp.order).toHaveLength(6);
+    expect(bp.unsupported).toHaveLength(1);
+    expect(bp.missing).toEqual({});
+    expect(bp.text).toMatch(/6 blocks to place/);
     const wall = await runtime!.runner.run({ action: 'build', args: { blocks } });
     expect(wall.ok, JSON.stringify(wall)).toBe(true);
     const r = wall.result as { placed: number; failureCount: number; alreadyCorrect: number };
@@ -180,9 +188,15 @@ describe('body e2e (flying-squid)', () => {
     const again = await runtime!.runner.run({ action: 'build', args: { blocks } });
     expect((again.result as { alreadyCorrect: number }).alreadyCorrect).toBeGreaterThanOrEqual(5);
     // materials check fails loudly when the inventory lacks the block
-    const missing = await runtime!.runner.run({ action: 'build', args: { blocks: [{ name: 'diamond_block', x: base.x, y: base.y + 5, z: base.z }] } });
+    const missing = await runtime!.runner.run({ action: 'build', args: { blocks: [{ name: 'diamond_block', x: base.x + 5, y: base.y, z: base.z + 5 }] } });
     expect(missing.ok).toBe(false);
     expect(missing.errorCode).toBe('MISSING_ITEM');
+    // a floating block is reported, not walked to; strict mode refuses the whole structure
+    const floating = await runtime!.runner.run({ action: 'build', args: { blocks: [{ name: 'stone', x: base.x + 5, y: base.y + 6, z: base.z + 5 }] } });
+    expect(floating.ok).toBe(true);
+    expect((floating.result as { failures: { error: string }[] }).failures[0]?.error).toMatch(/floating/);
+    const refused = await runtime!.runner.run({ action: 'build', args: { blocks: [{ name: 'stone', x: base.x + 5, y: base.y + 6, z: base.z + 5 }], strict: true } });
+    expect(refused.errorCode).toBe('BAD_REQUEST');
     // survey tools see the new wall
     const region = await runtime!.runner.run({ action: 'scan_region', args: { min: { x: base.x - 3, y: base.y, z: base.z - 3 }, max: { x: base.x - 1, y: base.y + 1, z: base.z - 3 } } });
     expect((region.result as { counts: Record<string, number> }).counts['stone']).toBeGreaterThanOrEqual(5);

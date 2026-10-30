@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from emeth.bridge.client import BodyClient, BodyEvent
+from emeth.cognition.construction import ConstructionOutcome, Constructor
 from emeth.cognition.critic import Critic
 from emeth.cognition.decide import (
     Decision,
@@ -87,6 +88,7 @@ class CognitiveLoop:
         critic: Critic,
         config: LoopConfig | None = None,
         language: str = "fr",
+        constructor: Constructor | None = None,
     ):
         self.body = body
         self.router = router
@@ -101,6 +103,7 @@ class CognitiveLoop:
         self.drives = drives
         self.consolidator = consolidator
         self.synthesizer = synthesizer
+        self.constructor = constructor
         self.critic = critic
         self.cfg = config or LoopConfig()
         self.language = language
@@ -472,6 +475,8 @@ class CognitiveLoop:
             await self._start_skill(d.skill_goal, obs)
         elif d.action_type == "stored_skill" and d.action_name:
             await self._start_stored_skill(d.action_name, d.action_args, obs)
+        elif d.action_type == "design" and d.design_brief:
+            await self._start_construction(d.design_brief, d.design_size, obs)
         elif d.action_type == "wait":
             self._wait_until = time.time() + d.wait_seconds
             self.timeline.add("action", f"waiting {d.wait_seconds}s" + (f" for {d.wait_for}" if d.wait_for else ""), importance=0.1)
@@ -588,6 +593,40 @@ class CognitiveLoop:
         self.stats.skills += 1
         self.timeline.add("action", f"working on a program to: {goal}", importance=0.3)
         self._action_task = asyncio.create_task(self._run_skill(goal, obs), name="skill")
+
+    async def _start_construction(self, brief: str, size: tuple[int, int, int] | None, obs: Observation) -> None:
+        if self.constructor is None:
+            self._last_result_text = "I cannot design buildings right now (no architect)."
+            return
+        if self._action_task and not self._action_task.done():
+            self._cancel_action("replaced")
+            with contextlib.suppress(Exception):
+                await self.body.stop()
+        self._task_before = obs
+        self._action_label = f"designing and building: {brief}"
+        self.stats.actions += 1
+        self.timeline.add("action", f"designing and building: {brief}"[:200], importance=0.4)
+
+        async def run() -> None:
+            try:
+                outcome: ConstructionOutcome = await self.constructor.build_from_brief(brief, obs, size=size, progress=lambda m: self.timeline.add("note", m[:200], importance=0.1))  # type: ignore[union-attr]
+            except asyncio.CancelledError:
+                return
+            except Exception as exc:  # noqa: BLE001
+                self._last_result_text = f"construction crashed: {exc}"
+                self.timeline.add("failure", self._last_result_text[:200])
+                self.wake("construction crashed")
+                return
+            if outcome.ok and outcome.origin:
+                ox, oy, oz = outcome.origin
+                self.graph.mark_place(outcome.name, ox, oy, oz, kind="structure", notes=brief[:120])
+                self.identity.bump(structures_built=1)
+                self.drives.on_event("achievement")
+                with contextlib.suppress(Exception):
+                    await self.wiki.note("project", outcome.name[:60], f"{brief}\n\nBuilt at ({ox}, {oy}, {oz}). {outcome.summary()}", tags=["build"], salience=0.7)
+            await self._on_result(outcome.build, result_text=outcome.summary())
+
+        self._action_task = asyncio.create_task(run(), name="construction")
 
     async def _start_stored_skill(self, name: str, args: dict[str, Any], obs: Observation) -> None:
         """Run a skill that already exists in the library, by name — no code model involved."""

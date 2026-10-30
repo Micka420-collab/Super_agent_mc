@@ -43,7 +43,7 @@ ressent, pas parce qu'on lui pose une question.
 Plutôt que des coordonnées brutes ou des templates, le modèle écrit une `StructureSpec` (palette + primitives bornées) ;
 le compilateur produit un blueprint ordonné, une nomenclature, des couches ASCII pour l'autocritique et des alertes « sans
 support ». Le critic (texte ou vision via la rétine) force l'itération. Le corps vérifie les matériaux **avant** de poser
-le premier bloc.
+le premier bloc. Depuis `design {brief}`, le chantier est entièrement vérifié : relevé du site, `plan_build` (point fixe des appuis : rien n'est posé dans le vide, rien n'enferme le bâtisseur), approvisionnement automatique des matériaux manquants, puis un lieu et une page projet en mémoire.
 
 ### 8. Sandbox de skills à trois couches, avec trace
 Analyse statique (acorn) → worker thread (le code n'a jamais le bot, budget temps dur, `terminate()` même en boucle

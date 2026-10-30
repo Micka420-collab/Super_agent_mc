@@ -1,13 +1,14 @@
 import { z } from 'zod';
 import { Vec3 } from 'vec3';
 import { BodyError, ErrorCodes } from '../protocol.js';
-import { placeBlockAt, isReplaceable } from '../motor/placing.js';
+import { planBuild, describeBuildPlan, type WorldProbe } from '../motor/buildplan.js';
+import { placeBlockAt, isReplaceable, isReplaceableName } from '../motor/placing.js';
 import { countItem, inventorySummary, normalizeName } from '../motor/items.js';
 import { throwIfAborted } from '../util/async.js';
 import { distance } from '../util/geometry.js';
 import { inventoryDelta } from './mining.js';
 import { runGet } from './procure.js';
-import { defineAction, getAction } from './registry.js';
+import { defineAction, getAction, type ActionContext } from './registry.js';
 
 export const BlockPlacementSchema = z.object({
   name: z.string(),
@@ -31,6 +32,32 @@ export function billOfMaterials(blocks: BlockPlacement[]): Record<string, number
   for (const b of blocks) bom[normalizeName(b.name)] = (bom[normalizeName(b.name)] ?? 0) + 1;
   return bom;
 }
+
+function probeFor(bot: ActionContext['bot']): WorldProbe {
+  return {
+    blockAt: (c) => bot.blockAt(new Vec3(c.x, c.y, c.z))?.name ?? null,
+    isReplaceable: (name) => isReplaceableName(bot, name),
+  };
+}
+
+defineAction({
+  name: 'plan_build',
+  category: 'building',
+  description:
+    'Dry run of a structure: the placement order that works (every block gets a solid neighbour to click on), the blocks that would float or be enclosed, cells occupied by other blocks, materials needed vs carried, estimated time. Costs nothing.',
+  longRunning: false,
+  schema: z.object({ blocks: z.array(BlockPlacementSchema).min(1).max(4096) }),
+  async run(ctx, a) {
+    const bot = ctx.bot;
+    const plan = planBuild(a.blocks, probeFor(bot), bot.entity.position.floored());
+    const missing: Record<string, number> = {};
+    for (const [name, need] of Object.entries(plan.materials)) {
+      const have = countItem(bot, name);
+      if (have < need) missing[name] = need - have;
+    }
+    return { ...plan, missing, text: describeBuildPlan(plan) + (Object.keys(missing).length ? ` Missing: ${Object.entries(missing).map(([n, c]) => `${c} ${n}`).join(', ')}.` : ' All materials in hand.') };
+  },
+});
 
 defineAction({
   name: 'place',
@@ -62,11 +89,18 @@ defineAction({
   }),
   async run(ctx, a) {
     const bot = ctx.bot;
-    // 1) skip cells that are already right
-    const todo = a.blocks.filter((b) => {
-      const existing = bot.blockAt(new Vec3(b.x, b.y, b.z));
-      return !(existing && existing.name === normalizeName(b.name));
-    });
+    // 1) dry run: what is already right, what can never be placed, and the order that works
+    const plan = planBuild(a.blocks, probeFor(bot), bot.entity.position.floored());
+    const todo = plan.order;
+    const failures: { block: BlockPlacement; error: string }[] = [
+      ...plan.unsupported.map((b) => ({ block: b, error: 'nothing to place it against (floating)' })),
+      ...plan.enclosed.map((b) => ({ block: b, error: 'enclosed on all sides' })),
+      ...plan.occupied.map((o) => ({ block: o.placement, error: `occupied by ${o.by}` })),
+      ...plan.unloaded.map((b) => ({ block: b, error: 'chunk not loaded' })),
+    ];
+    if (failures.length && a.strict) {
+      throw new BodyError(ErrorCodes.BAD_REQUEST, `structure is not buildable as is: ${describeBuildPlan(plan)}`, { plan });
+    }
     // 2) materials check (optionally fetching what is missing)
     const bom = billOfMaterials(todo);
     const computeMissing = () => {
@@ -96,10 +130,9 @@ defineAction({
     if (Object.keys(missing).length && !a.partial) {
       throw new BodyError(ErrorCodes.MISSING_ITEM, `missing materials: ${Object.entries(missing).map(([n, c]) => `${c} ${n}`).join(', ')}`, { missing, bom, procured });
     }
-    // 3) place bottom-up
-    const ordered = orderPlacements(todo, bot.entity.position);
+    // 3) place in the proven order
+    const ordered = todo;
     const before = inventorySummary(bot);
-    const failures: { block: BlockPlacement; error: string }[] = [];
     let placed = 0;
     let skipped = 0;
     for (let i = 0; i < ordered.length; i++) {
@@ -128,7 +161,7 @@ defineAction({
     }
     return {
       planned: a.blocks.length,
-      alreadyCorrect: a.blocks.length - todo.length,
+      alreadyCorrect: plan.alreadyCorrect.length,
       placed,
       skipped,
       failures: failures.slice(0, 25),

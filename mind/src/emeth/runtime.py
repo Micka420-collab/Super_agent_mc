@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from emeth.bridge.client import BodyClient, TransportFactory, websocket_factory
+from emeth.builder.designer import Designer
+from emeth.cognition.construction import Constructor
 from emeth.cognition.critic import Critic
 from emeth.cognition.drives import Drives
 from emeth.cognition.loop import CognitiveLoop
@@ -58,6 +60,7 @@ class Mind:
             self.control.write_token(self.settings.control_token_path())
         await self.skills.sync_from_disk()
         synthesizer = SkillSynthesizer(self.router, self.body, self.skills, max_attempts=self.settings.loop.max_skill_attempts)
+        constructor = Constructor(Designer(self.router), self.body)
         self.loop = CognitiveLoop(
             body=self.body,
             router=self.router,
@@ -75,6 +78,7 @@ class Mind:
             critic=self.critic,
             config=self.settings.loop,
             language=self.settings.language,
+            constructor=constructor,
         )
         return self.loop
 

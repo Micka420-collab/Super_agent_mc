@@ -28,7 +28,7 @@ index.ts ─ createBody ─┬─ Observer (perception/observer.ts)   observatio
   Aucune dépendance native. La légende couleur→bloc et la description texte sont dérivées des mêmes rayons.
 
 ### Motricité
-- 51 primitives déclarées avec zod (`actions/*.ts`) → un **manifeste** JSON-schema et une **doc d'API de skills**
+- 52 primitives déclarées avec zod (`actions/*.ts`) → un **manifeste** JSON-schema et une **doc d'API de skills**
   générés depuis la même source. Catégories : movement, mining, crafting, building, combat, inventory, social, survival,
   perception, meta. Chaque primitive renvoie un résultat structuré (`inventoryDelta`, `placed/skipped/failures`,
   `missing: [{name, missing}]`…) et lève des `BodyError` codés (`MISSING_ITEM`, `NO_PATH`, `TIMEOUT`, `INTERRUPTED`…).
@@ -41,6 +41,11 @@ index.ts ─ createBody ─┬─ Observer (perception/observer.ts)   observatio
   cassés en chemin (coffres, tables, verre). Pose de blocs : recherche de face de référence, `GoalPlaceBlock`, sneak,
   vérification. Craft : table trouvée/craftée/posée automatiquement, feedback des ingrédients manquants ; four : choix du
   combustible, attente bornée, sortie récupérée.
+- **Faisabilité de construction** (`motor/buildplan.ts`, `plan_build`) : simulation point-fixe des poses — un bloc
+  n'est posé que lorsqu'il a un voisin plein à cliquer (sol, bloc existant, bloc de la structure déjà posé) ; sortie :
+  l'ordre qui marche, les blocs qui flotteraient, ceux enfermés sur six faces, les cellules occupées, les chunks non
+  chargés, la nomenclature et une durée estimée. `build` s'appuie dessus (plus de marche vers l'impossible ; `strict`
+  refuse la structure entière), et `build {procure: true}` récolte les matériaux manquants via le planificateur.
 - **Approvisionnement** (`motor/procurement.ts`, `actions/procure.ts`) : `plan_get` compile « item → arbre de
   dépendances » depuis `minecraft-data` (recettes via prismarine-recipe, `blockLoot`, `entityLoot`, `harvestTools`) en
   reculant depuis l'item voulu : inventaire → bloc brut (outil minimal inséré avant) → cuisson (+ four) → mob curé →
@@ -129,6 +134,14 @@ hachage local si aucun fournisseur ne les offre.
 Pile d'objectifs persistante (priorité, source : curriculum / LLM / joueur). **Échelle de survie** de 21 jalons avec
 spécifications de succès vérifiables (`inventory`, `inventory_any`, `tool_tier`, `food_points`, `armor_pieces`, `slept`,
 `custom`) et prérequis ; jalons échoués 3 fois mis de côté. Le même `check_success` sert au critic.
+
+### Construction (`cognition/construction.py`)
+La décision `design {brief, size?}` déclenche `Constructor.build_from_brief` : relevé du site devant l'agent
+(`surface_height` → niveau médian, rugosité, blocs de surface), architecte (`Designer`, budget de matériaux indicatif
+puisque le corps sait s'approvisionner), ancrage de la blueprint centrée quelques blocs devant le regard, `plan_build`
+(ordre prouvé ; blocs flottants ignorés et signalés), puis `build {procure: true, partial: true}`. Succès = ≥ 80 % des
+blocs en place ; la structure devient un nœud du graphe de monde et une page `project` du wiki, et le résumé honnête
+part au critique comme n'importe quel résultat.
 
 ### Builder
 `StructureSpec` (pydantic) : palette (`$wall`, `$roof_block`…), primitives `box/floor/walls/roof(gable|hip|flat)/pillar/

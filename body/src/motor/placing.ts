@@ -18,6 +18,14 @@ export function isReplaceable(block: Block | null): boolean {
   return !block || NON_SOLID.has(block.name) || block.boundingBox === 'empty';
 }
 
+/** Same test from a block name alone (for simulations over snapshots). */
+export function isReplaceableName(bot: Bot, name: string | null): boolean {
+  if (name === null) return false;
+  if (NON_SOLID.has(name)) return true;
+  const def = bot.registry.blocksByName[name] as { boundingBox?: string } | undefined;
+  return def?.boundingBox === 'empty';
+}
+
 /** Find a solid neighbour of `pos` to click on, and the face vector pointing from it to `pos`. */
 export function findReference(bot: Bot, pos: Vec3): { reference: Block; face: Vec3 } | null {
   // prefer the block below (most natural), then sides, then above

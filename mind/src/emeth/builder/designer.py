@@ -66,7 +66,9 @@ class Designer:
         self.max_attempts = max_attempts
         self.accept_score = accept_score
 
-    async def design(self, brief: str, *, site: str = "", materials: dict[str, int] | None = None, max_size: tuple[int, int, int] = (12, 8, 12), retina_png_b64: str | None = None) -> DesignResult:
+    async def design(self, brief: str, *, site: str = "", materials: dict[str, int] | None = None, max_size: tuple[int, int, int] = (12, 8, 12), retina_png_b64: str | None = None, strict_budget: bool = True) -> DesignResult:
+        """`materials` is a hard budget when `strict_budget` (shortfalls reject the design) and a mere hint otherwise —
+        the body can procure what is missing, so a construction run passes `strict_budget=False`."""
         feedback = ""
         critiques: list[dict[str, Any]] = []
         last_error = ""
@@ -94,7 +96,7 @@ class Designer:
             problems = list(report.warnings)
             if sx > max_size[0] or sy > max_size[1] or sz > max_size[2]:
                 problems.append(f"size {sx}x{sy}x{sz} exceeds the limit {max_size[0]}x{max_size[1]}x{max_size[2]}")
-            if materials:
+            if materials and strict_budget:
                 bom = bp.bill_of_materials()
                 short = {b: n - materials.get(b, 0) for b, n in bom.items() if materials.get(b, 0) < n}
                 if short:
@@ -115,7 +117,7 @@ class Designer:
         if site:
             parts.append(f"# Site survey\n{site}")
         if materials:
-            parts.append("# Materials available\n" + ", ".join(f"{b}×{n}" for b, n in sorted(materials.items(), key=lambda kv: -kv[1])[:30]))
+            parts.append("# Materials in hand\n" + ", ".join(f"{b}×{n}" for b, n in sorted(materials.items(), key=lambda kv: -kv[1])[:30]) + "\nPrefer these and cheap, common blocks (planks, logs, cobblestone, glass): anything else must be gathered first.")
         parts.append(
             "# Example spec\n"
             + json.dumps(

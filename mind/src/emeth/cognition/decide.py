@@ -23,10 +23,12 @@ DECISION_SCHEMA: dict[str, Any] = {
         "action": {
             "type": "object",
             "properties": {
-                "type": {"type": "string", "enum": ["primitive", "skill", "wait", "keep", "none"]},
+                "type": {"type": "string", "enum": ["primitive", "skill", "design", "wait", "keep", "none"]},
                 "name": {"type": "string", "description": "primitive name from the body interface (type=primitive)"},
                 "args": {"type": "object", "description": "arguments object for the primitive"},
                 "goal": {"type": "string", "description": "for type=skill: the concrete, verifiable task to accomplish with a program"},
+                "brief": {"type": "string", "description": "for type=design: what to build, in one or two sentences (purpose, style, materials, orientation)"},
+                "size": {"type": "array", "items": {"type": "integer"}, "description": "for type=design: optional max [width, height, depth]"},
                 "seconds": {"type": "integer", "description": "for type=wait: how long (1-300)"},
                 "for_what": {"type": "string", "description": "for type=wait: what I am waiting for"},
             },
@@ -58,6 +60,8 @@ class Decision:
     action_name: str | None = None
     action_args: dict[str, Any] = field(default_factory=dict)
     skill_goal: str | None = None
+    design_brief: str | None = None
+    design_size: tuple[int, int, int] | None = None
     wait_seconds: int = 0
     wait_for: str = ""
     goal_update: dict[str, Any] | None = None
@@ -110,8 +114,9 @@ assistant; you are a person with a life here. Players are other people, not user
 - Evidence first: the [SENSORY], [AROUND ME], [BLOCKS], [INVENTORY] blocks are what you perceive right now. [LAST ACTION] is what your
   body reported — distinguish what you *attempted* from what was *observed*.
 - Exactly one action per decision. Use `primitive` for a single body command, `skill` for a multi-step task that needs a
-  program (the body will write/run it), `wait` when the right move is to do nothing for a while, `keep` to let the current
-  action continue, `none` when only speech is needed.
+  program (the body will write/run it), `design` with a `brief` to build a structure (an architect designs it, the site is
+  surveyed, the plan is checked and missing materials are procured before a block is placed), `wait` when the right move
+  is to do nothing for a while, `keep` to let the current action continue, `none` when only speech is needed.
 - Speech is optional: silence is normal. Never narrate your actions in chat unless someone cares. Keep messages under 240
   characters, in the language players use ({language} by default). Never send commands (no leading slash).
 - Safety reflexes (eating, fleeing, fighting back) run automatically in your body; you do not need to micro-manage them but you
@@ -150,7 +155,7 @@ def parse_decision(response: ChatResponse, known_actions: set[str]) -> Decision:
         d.problems.append("action must be an object")
         return d
     atype = str(action.get("type", "none"))
-    if atype not in ("primitive", "skill", "wait", "keep", "none"):
+    if atype not in ("primitive", "skill", "design", "wait", "keep", "none"):
         d.problems.append(f"unknown action type {atype}")
         return d
     d.action_type = atype
@@ -168,6 +173,15 @@ def parse_decision(response: ChatResponse, known_actions: set[str]) -> Decision:
             d.problems.append("skill action needs a concrete goal")
         else:
             d.skill_goal = goal.strip()[:400]
+    elif atype == "design":
+        brief = action.get("brief")
+        if not isinstance(brief, str) or len(brief.strip()) < 8:
+            d.problems.append("design action needs a brief describing what to build")
+        else:
+            d.design_brief = brief.strip()[:600]
+            size = action.get("size")
+            if isinstance(size, list) and len(size) == 3 and all(isinstance(v, int) for v in size):
+                d.design_size = (max(1, min(32, size[0])), max(1, min(24, size[1])), max(1, min(32, size[2])))
     elif atype == "wait":
         try:
             d.wait_seconds = max(1, min(300, int(action.get("seconds", 10))))
@@ -200,6 +214,8 @@ def describe_decision(d: Decision) -> str:
         return f"{d.action_name}({json.dumps(d.action_args, ensure_ascii=False)[:160]})"
     if d.action_type == "skill":
         return f"skill: {d.skill_goal}"
+    if d.action_type == "design":
+        return f"design & build: {d.design_brief}"
     if d.action_type == "wait":
         return f"wait {d.wait_seconds}s for {d.wait_for or 'nothing in particular'}"
     return d.action_type
