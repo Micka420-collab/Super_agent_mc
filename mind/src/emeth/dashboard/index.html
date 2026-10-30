@@ -161,7 +161,7 @@
       $('last').textContent = 'dernier résultat : ' + (st.last_result || '—');
       const d = st.drives || {}; const names = { safety: 'sécurité', hunger: 'faim', rest: 'repos', curiosity: 'curiosité', social: 'social', mastery: 'maîtrise', order: 'ordre', mood: 'humeur' };
       $('drives').innerHTML = Object.keys(names).filter(k => k in d).map(k => `<span>${names[k]}</span><div class="bar"><i style="width:${pct(d[k], 1)}%;background:${k === 'mood' ? 'var(--acc)' : d[k] > 0.75 ? 'var(--bad)' : d[k] > 0.5 ? 'var(--warn)' : 'var(--acc)'}"></i></div><span class="num">${d[k].toFixed(2)}</span>`).join('');
-      const stats = st.stats || {}; $('stats').textContent = `décisions ${stats.decisions ?? 0} · actions ${stats.actions ?? 0} · skills ${stats.skills ?? 0} · paroles ${stats.speeches ?? 0} · rêves ${stats.dreams ?? 0} · erreurs ${stats.errors ?? 0}`;
+      const stats = st.stats || {}; $('stats').textContent = `décisions ${stats.decisions ?? 0} (instinct ${stats.instinct_decisions ?? 0}) · actions ${stats.actions ?? 0} · skills ${stats.skills ?? 0} · paroles ${stats.speeches ?? 0} · rêves ${stats.dreams ?? 0} · erreurs ${stats.errors ?? 0}`;
       let cost = 0, pills = [];
       for (const [pid, h] of Object.entries(st.router || {})) { cost += h.cost_usd || 0; pills.push(`<span class="pill ${h.available ? 'ok' : 'off'}" title="${h.last_error || ''}">${pid} · ${h.breaker} · ${h.calls} appels · ${h.avg_latency_ms} ms</span>`); }
       $('router').innerHTML = pills.join('') || '<span class="muted">aucun fournisseur</span>';

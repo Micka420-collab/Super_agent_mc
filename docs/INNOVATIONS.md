@@ -81,6 +81,13 @@ Aucun outil ne commande le corps. C'est la relation maître/apprenti plutôt que
 même boîte « mentor », servi par l'esprit lui-même à `http://127.0.0.1:8766/` (une page, zéro build). Prochaine étape naturelle : l'esprit consommant à son tour
 d'autres serveurs MCP (wiki du serveur, Discord) comme des sens supplémentaires.
 
+### 13. L'instinct : vivre quand le modèle de langage se tait
+Panne d'API, quota, clé expirée — la plupart des agents s'arrêtent net et la nuit les emporte. EMETH a un instinct :
+une politique déterministe (`cognition/instinct.py`) qui, sur la même observation, mange, s'abrite, dort, poursuit
+l'échelle de survie avec le planificateur (`get stone_pickaxe`), ou attend. Elle emprunte le même chemin d'exécution
+et la même mémoire que les décisions du modèle ; quand l'esprit revient, il lit « instinct : … » dans sa timeline et
+reprend là où son corps en était. Testé avec un fournisseur qui échoue à chaque appel : l'agent agit quand même.
+
 ## Conçu, à coder ensuite (voir ROADMAP)
 
 ### 13. Sandbox d'imagination (jumeau du monde)

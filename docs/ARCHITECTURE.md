@@ -96,6 +96,14 @@ runtime.build_mind ─┬─ BodyClient (bridge/client.py)             RPC + fil
   de l'échelle et de l'identité, puis réveil « action result » (le feedback ChatClef qui enchaîne).
 - Mort → respawn différé ; sommeil → `dream()` en tâche de fond ; `writable_book` dans l'inventaire → journal écrit en jeu.
 
+### Instinct (`cognition/instinct.py`)
+Quand aucun fournisseur ne répond (`LLMError` : panne, quota, clé expirée), la boucle n'attend pas : `act_on_instinct`
+produit une `Decision` déterministe depuis la même observation — garder une action en cours, manger si affamé, dormir
+dans un lit porté ou lancer le skill `emergency_shelter` à la nuit, sinon traduire le jalon courant de l'échelle en
+primitive (`get wooden_pickaxe`, `mine log`…), sinon attendre. Même chemin d'exécution, même mémoire : la timeline
+porte des entrées `instinct: …` que l'esprit relit à son retour. Le type `stored_skill` (réservé à l'instinct) exécute
+un skill de la bibliothèque par son nom, sans modèle de code.
+
 ### Mémoire
 | Couche | Stockage | Rôle |
 |---|---|---|

@@ -33,6 +33,7 @@ from emeth.cognition.decide import (
     system_prompt,
 )
 from emeth.cognition.drives import Drives
+from emeth.cognition.instinct import InstinctContext, instinct
 from emeth.cognition.planner import Planner, Task
 from emeth.cognition.skills import SkillOutcome, SkillSynthesizer
 from emeth.config import LoopConfig
@@ -62,6 +63,7 @@ class LoopStats:
     speeches: int = 0
     dreams: int = 0
     errors: int = 0
+    instinct_decisions: int = 0
     started_at: float = field(default_factory=time.time)
 
 
@@ -146,7 +148,11 @@ class CognitiveLoop:
                 except LLMError as exc:
                     self.stats.errors += 1
                     log.error("decision failed: %s", exc)
-                    self.timeline.add("note", f"my mind stalled: {str(exc)[:120]}")
+                    self.timeline.add("note", f"my language mind is unavailable ({str(exc)[:100]}) — instinct takes over")
+                    try:
+                        await self.act_on_instinct(", ".join(reasons))
+                    except Exception as inner:  # noqa: BLE001
+                        log.exception("instinct failed: %s", inner)
                     await asyncio.sleep(10)
                 except Exception as exc:  # noqa: BLE001
                     self.stats.errors += 1
@@ -335,6 +341,19 @@ class CognitiveLoop:
             self._last_decision_at = time.time()
             await self._execute(decision, obs)
 
+    async def act_on_instinct(self, woke_by: str) -> Decision:
+        """Deterministic fallback when no language model answers: same observation, same execution path."""
+        async with self._thinking:
+            obs = await self.body.observe("compact")
+            self._appraise(obs, woke_by)
+            self._ensure_goal(obs)
+            library = self.synthesizer.library if self.synthesizer else None
+            available = {r.name for r in library.records()} if library else set()
+            decision = instinct(InstinctContext(obs=obs, planner=self.planner, busy=bool(self._action_task and not self._action_task.done()), available_skills=available, known_actions=self.body.action_names))
+            self.stats.instinct_decisions += 1
+            await self._execute(decision, obs)
+            return decision
+
     def _appraise(self, obs: Observation, woke_by: str) -> None:
         s = obs.self_
         self.timeline.set_context(obs.world.day, (s.position.x, s.position.y, s.position.z), s.dimension)
@@ -451,6 +470,8 @@ class CognitiveLoop:
             await self._start_action(d.action_name, d.action_args, obs)
         elif d.action_type == "skill" and d.skill_goal:
             await self._start_skill(d.skill_goal, obs)
+        elif d.action_type == "stored_skill" and d.action_name:
+            await self._start_stored_skill(d.action_name, d.action_args, obs)
         elif d.action_type == "wait":
             self._wait_until = time.time() + d.wait_seconds
             self.timeline.add("action", f"waiting {d.wait_seconds}s" + (f" for {d.wait_for}" if d.wait_for else ""), importance=0.1)
@@ -567,6 +588,41 @@ class CognitiveLoop:
         self.stats.skills += 1
         self.timeline.add("action", f"working on a program to: {goal}", importance=0.3)
         self._action_task = asyncio.create_task(self._run_skill(goal, obs), name="skill")
+
+    async def _start_stored_skill(self, name: str, args: dict[str, Any], obs: Observation) -> None:
+        """Run a skill that already exists in the library, by name — no code model involved."""
+        library = self.synthesizer.library if self.synthesizer else None
+        skill = library.get(name) if library else None
+        if skill is None:
+            self._last_result_text = f"skill {name} is not in my library"
+            self.timeline.add("failure", self._last_result_text)
+            return
+        if self._action_task and not self._action_task.done():
+            self._cancel_action("replaced")
+            with contextlib.suppress(Exception):
+                await self.body.stop()
+        self._task_before = obs
+        self._action_label = f"skill {name}"
+        self.stats.skills += 1
+        self.timeline.add("action", f"running my skill {name} {args}"[:200], importance=0.3)
+
+        async def run() -> None:
+            started = time.time()
+            try:
+                result = await self.body.run_skill(skill.name, skill.code, args)
+            except BodyError as exc:
+                self._last_result_text = f"skill {name} FAILED before starting: {exc.code}: {exc.message}"
+                self.timeline.add("failure", self._last_result_text[:200], importance=0.5)
+                self.wake(f"skill failed: {name}")
+                return
+            except asyncio.CancelledError:
+                return
+            if library is not None:
+                library.record_outcome(skill.name, result.ok, (time.time() - started) * 1000)
+            self.identity.bump(skills_used=1)
+            await self._on_result(result, result_text=render_action_result(result))
+
+        self._action_task = asyncio.create_task(run(), name=f"skill-{name}")
 
     async def _run_skill(self, goal: str, obs: Observation) -> None:
         assert self.synthesizer is not None

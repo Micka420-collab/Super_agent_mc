@@ -1,0 +1,130 @@
+"""Instinct — what the agent does when its language mind is unavailable.
+
+API outages, rate limits, an expired key, a laptop that lost Wi-Fi: with most agents the body stands still and the
+night takes it. EMETH keeps living. `instinct()` is a small deterministic policy over the same observation, planner
+and drives the LLM uses, and it produces the same `Decision` objects, so execution, memory and critic see nothing
+special — except that the timeline says *instinct* did it, which the mind reads when it comes back.
+
+Priorities (first match wins):
+  1. something is already running → keep;
+  2. starving with food in hand → eat;
+  3. dusk/night outside → sleep in a carried bed, else the `emergency_shelter` skill if the library has it, else wait;
+  4. the current curriculum milestone, translated into a deterministic primitive (mostly `get <item>`);
+  5. otherwise wait a while.
+It never speaks (it has nothing of its own to say) and never fights (reflexes handle defence). A `stored_skill`
+decision runs a skill already in the library by name (no code model needed) — only instinct emits that type.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from emeth.cognition.decide import Decision
+from emeth.cognition.planner import FOOD_POINTS, Planner, Task
+from emeth.protocol import Observation
+
+# milestone id → what to ask the body for (ordered alternatives: the first one not yet satisfied is used)
+MILESTONE_ACTIONS: dict[str, list[tuple[str, dict[str, Any], str | None]]] = {
+    # (primitive, args, item whose presence satisfies the step — None = always run)
+    "wood": [("mine", {"name": "log", "count": 6, "maxDistance": 48}, None)],
+    "planks": [("get", {"name": "oak_planks", "count": 12}, "any_planks")],
+    "table": [("get", {"name": "crafting_table", "count": 1}, "crafting_table")],
+    "sticks": [("get", {"name": "stick", "count": 8}, "stick")],
+    "wood_pickaxe": [("get", {"name": "wooden_pickaxe", "count": 1}, "wooden_pickaxe")],
+    "stone": [("get", {"name": "cobblestone", "count": 12}, None)],
+    "stone_tools": [
+        ("get", {"name": "stone_pickaxe", "count": 1}, "stone_pickaxe"),
+        ("get", {"name": "stone_axe", "count": 1}, "stone_axe"),
+        ("get", {"name": "stone_sword", "count": 1}, "stone_sword"),
+    ],
+    "food": [("get", {"name": "cooked_beef", "count": 4}, None)],
+    "coal": [("get", {"name": "coal", "count": 6}, None)],
+    "torches": [("get", {"name": "torch", "count": 8}, None)],
+    "furnace": [("get", {"name": "furnace", "count": 1}, "furnace")],
+    "iron": [("get", {"name": "iron_ingot", "count": 9}, None)],
+    "iron_tools": [
+        ("get", {"name": "iron_pickaxe", "count": 1}, "iron_pickaxe"),
+        ("get", {"name": "iron_sword", "count": 1}, "iron_sword"),
+    ],
+    "bed": [("get", {"name": "white_bed", "count": 1}, "white_bed"), ("sleep", {}, None)],
+    "iron_armor": [
+        ("get", {"name": "iron_chestplate", "count": 1}, "iron_chestplate"),
+        ("get", {"name": "iron_leggings", "count": 1}, "iron_leggings"),
+    ],
+    "diamond": [("get", {"name": "diamond", "count": 3}, None)],
+    "diamond_pickaxe": [("get", {"name": "diamond_pickaxe", "count": 1}, "diamond_pickaxe")],
+}
+
+# milestones with a `custom` verifier: a seed skill does the job when present
+MILESTONE_SKILLS: dict[str, str] = {"shelter": "emergency_shelter"}
+
+SHELTER_SKILL = "emergency_shelter"
+
+
+@dataclass
+class InstinctContext:
+    obs: Observation
+    planner: Planner
+    busy: bool
+    available_skills: set[str]
+    known_actions: set[str]
+
+
+def _count(inv: dict[str, int], name: str) -> int:
+    if name == "any_planks":
+        return sum(c for n, c in inv.items() if n.endswith("_planks"))
+    if name == "any_log":
+        return sum(c for n, c in inv.items() if n.endswith("_log"))
+    return inv.get(name, 0)
+
+
+def _best_food(inv: dict[str, int]) -> str | None:
+    edible = [(FOOD_POINTS[n], n) for n in inv if n in FOOD_POINTS and inv[n] > 0]
+    return max(edible)[1] if edible else None
+
+
+def _has_bed(inv: dict[str, int]) -> bool:
+    return any(n.endswith("_bed") for n in inv)
+
+
+def _milestone_id(task: Task | None) -> str | None:
+    if task is None or not task.source.startswith("curriculum:"):
+        return None
+    return task.source.split(":", 1)[1]
+
+
+def instinct(ctx: InstinctContext) -> Decision:
+    """A deterministic decision from the current state. Always valid against `known_actions`."""
+    obs = ctx.obs
+    inv = obs.inventory.summary()
+    s = obs.self_
+    can = ctx.known_actions.__contains__
+
+    if ctx.busy or obs.action is not None:
+        return Decision(reason="instinct: my body is busy, letting it finish", action_type="keep")
+
+    food = _best_food(inv)
+    if s.food <= 8 and food and can("eat"):
+        return Decision(reason=f"instinct: hungry ({s.food}/20), eating {food}", action_type="primitive", action_name="eat", action_args={"name": food})
+
+    if obs.world.phase in ("dusk", "night") and not s.isSleeping:
+        if _has_bed(inv) and can("sleep"):
+            return Decision(reason="instinct: night is falling and I carry a bed", action_type="primitive", action_name="sleep", action_args={"waitForMorning": True})
+        if SHELTER_SKILL in ctx.available_skills:
+            return Decision(reason="instinct: night outside, raising an emergency shelter", action_type="stored_skill", action_name=SHELTER_SKILL, action_args={})
+        return Decision(reason="instinct: night outside and nothing to build with, staying put", action_type="wait", wait_seconds=60, wait_for="daylight")
+
+    task = ctx.planner.current_task()
+    mid = _milestone_id(task)
+    if mid:
+        for primitive, args, satisfied_by in MILESTONE_ACTIONS.get(mid, []):
+            if satisfied_by and _count(inv, satisfied_by) >= int(args.get("count", 1)):
+                continue
+            if can(primitive):
+                return Decision(reason=f"instinct: working on the ladder step '{mid}'", action_type="primitive", action_name=primitive, action_args=dict(args))
+        skill = MILESTONE_SKILLS.get(mid)
+        if skill and skill in ctx.available_skills:
+            return Decision(reason=f"instinct: ladder step '{mid}' through the {skill} skill", action_type="stored_skill", action_name=skill, action_args={})
+
+    return Decision(reason="instinct: nothing urgent and no language mind — resting", action_type="wait", wait_seconds=45, wait_for="my mind to come back")

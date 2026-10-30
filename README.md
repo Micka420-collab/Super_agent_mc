@@ -40,12 +40,13 @@ Tout a été vérifié contre l'état de l'art d'octobre 2026 (voir [`docs/RESEA
 | Construction = templates JSON ou liste de coordonnées | **DSL d'architecte** paramétrique → blueprint ordonné + nomenclature + critique ASCII/vision |
 | Personnalité fixe | **Autonomie gagnée** : 6 niveaux (nouveau-né → éveillé) débloqués par les jours survécus, skills, amitiés, constructions |
 | « get diamond_pickaxe » = le LLM enchaîne des appels à l'aveugle | **Planificateur d'approvisionnement** : item → arbre mine/table/outil/four/chasse compilé depuis les recettes et loot tables, compacté avec preuve de faisabilité, replanifié après chaque étape |
+| Panne d'API = agent figé, la nuit l'emporte | **Instinct** : politique déterministe (manger, s'abriter, dormir, étape suivante de l'échelle via le planificateur) qui prend le relais quand aucun modèle ne répond, et laisse une trace que l'esprit relit à son retour |
 | L'agent est une boîte noire ou une manette | **Façade MCP** : depuis Claude Code/Desktop ou Codex, on voit par ses yeux, on lit sa mémoire et on lui parle en mentor — il pèse le conseil, il ne l'exécute pas |
 
 ## État du projet (30 oct. 2026)
 
 - ✅ Corps complet, typé, **77 tests** (69 unitaires + 8 e2e sur un vrai serveur Minecraft JS 1.21.1 : spawn, pathfinding, minage, pose et construction, planification d'approvisionnement, skill live, bridge authentifié), 51 primitives.
-- ✅ Esprit complet, **40 tests** (routeur, mémoire, cognition, builder, boucle de bout en bout avec un corps simulé, canal de contrôle et façade MCP), `ruff` + `mypy` propres.
+- ✅ Esprit complet, **47 tests** (routeur, mémoire, cognition, builder, boucle de bout en bout avec un corps simulé, canal de contrôle et façade MCP), `ruff` + `mypy` propres.
 - ✅ Chaîne complète validée en direct (`mind/scripts/live_smoke.py`) : corps réel ↔ esprit ↔ MCP (regarder, parler au mentor, répondre dans le jeu).
 - ⏳ Pas encore validé sur un serveur Paper avec de vraies clés LLM : c'est l'étape suivante (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)).
 - ⏳ Voix (Simple Voice Chat), récap vidéo (HyperFrames), sandbox d'imagination, multi-agents : conçus, pas encore codés.
