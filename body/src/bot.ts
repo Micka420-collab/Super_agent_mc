@@ -9,7 +9,7 @@ import { loader as autoEatPlugin } from 'mineflayer-auto-eat';
 import armorManager from 'mineflayer-armor-manager';
 import { plugin as toolPlugin } from 'mineflayer-tool';
 import type { BodyConfig } from './config.js';
-import { Observer } from './perception/observer.js';
+import { Observer, droppedItemOf } from './perception/observer.js';
 import { buildMovements } from './motor/movement.js';
 import { ActionRunner } from './actions/runner.js';
 import { ReflexSystem } from './motor/reflexes.js';
@@ -149,7 +149,7 @@ export function createBody(config: BodyConfig): BodyRuntime {
   });
   bot.on('playerCollect', (collector, collected) => {
     if (collector !== bot.entity) return;
-    const item = (collected as unknown as { getDroppedItem?: () => { name: string; count: number } | null }).getDroppedItem?.();
+    const item = droppedItemOf(collected);
     if (item) {
       observer.pushEvent('item.collected', `picked up ${item.count} ${item.name}`);
       emit('item.collected', { name: item.name, count: item.count });

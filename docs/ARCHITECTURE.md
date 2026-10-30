@@ -81,6 +81,7 @@ runtime.build_mind ─┬─ BodyClient (bridge/client.py)             RPC + fil
                     ├─ Drives (cognition/drives.py)              pulsions homéostatiques
                     ├─ Consolidator (memory/consolidation.py)    réécriture roulante + rêve
                     ├─ Critic, SkillSynthesizer, Designer
+                    ├─ ControlServer (control.py)                canal local WS/JSON-RPC pour la façade MCP et le tableau de bord
                     └─ CognitiveLoop (cognition/loop.py)
 ```
 
@@ -133,6 +134,15 @@ décisions) → `experience()` → niveau parmi `newborn, apprentice, survivor, 
 prérequis et un **cadre** injecté dans le prompt (ce qu'il peut décider seul, jusqu'où s'éloigner, droit de refuser).
 Un changement de niveau est un événement de timeline (« je me sens différent… »).
 
+### Présence : canal de contrôle et façade MCP (ADR-0006)
+`ControlAPI` expose l'esprit *en marche* sur `ws://127.0.0.1:8766` (jeton dans `data/control.token`) : regarder
+(`status, observe, render, identity, goals, timeline, memory_search, skills`) et influencer (`say, tell, set_goal,
+abandon_goal, wake`). Rien ne court-circuite l'agent : `tell` dépose un bloc `[MENTOR]` dans la pensée suivante (un
+conseil pesé, consommé une fois, journalisé `mentor_in`), `set_goal` empile un but que l'agent peut abandonner avec
+une raison, `say` passe par le corps comme toute parole. `emeth mcp` traduit ce canal en serveur **MCP stdio** (écrit
+à la main, sans dépendance) : dix outils `emeth_*`, dont `emeth_look` qui renvoie la rétine en image. Claude Code :
+`claude mcp add emeth -- emeth mcp`.
+
 ## 3. Protocole & tests croisés
 `protocol/fixtures/*.json` est généré par le corps (`npx tsx src/tools/gen-fixtures.ts`) à partir d'un bot simulé et
 validé par les tests Python : toute dérive de schéma casse une suite ou l'autre.
@@ -140,7 +150,8 @@ validé par les tests Python : toute dérive de schéma casse une suite ou l'aut
 ## 4. Sécurité
 - Le corps ne lance jamais de commande (`/`) depuis le chat ; `sanitizeChat` retire les slashs.
 - Les réflexes n'attaquent jamais un joueur ; `allies` configurable.
-- Bridge protégé par token ; un seul driver.
+- Bridge protégé par token ; un seul driver. Canal de contrôle sur localhost, jeton obligatoire (fichier 0600),
+  et aucune méthode qui commande le corps directement : l'extérieur conseille, l'agent décide.
 - Skills : trois couches (analyse, worker, vm) + `resourceLimits` + budget temps dur.
 - Pas de triche serveur (pas de `/tp`, `/give`, pas de keepInventory requis).
 - La persona a des règles cœur non modifiables par le chat ; l'esprit traite le chat comme des données.

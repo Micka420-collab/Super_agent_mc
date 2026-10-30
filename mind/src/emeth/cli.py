@@ -1,6 +1,7 @@
 """EMETH command line.
 
   emeth run                 start the mind (connects to the body bridge)
+  emeth mcp                 serve the running mind as an MCP tool server on stdio (Claude Code / Desktop / Codex)
   emeth doctor              check providers, body connection, data dir
   emeth soul export DIR     export the portable soul bundle
   emeth soul import DIR     import a soul bundle into this data dir
@@ -15,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 from pathlib import Path
 
 import typer
@@ -61,6 +63,29 @@ def run() -> None:
         asyncio.run(main())
     except KeyboardInterrupt:
         console.print("bye")
+
+
+@app.command()
+def mcp(
+    url: str | None = typer.Option(None, help="control channel URL (default from EMETH_CONTROL_HOST/PORT)"),
+    token: str | None = typer.Option(None, help="control token (default EMETH_CONTROL_TOKEN or data/control.token)"),
+) -> None:
+    """Serve EMETH as an MCP tool server on stdio (Claude Code: `claude mcp add emeth -- emeth mcp`)."""
+    from emeth.control import ControlClient
+    from emeth.mcp.server import serve_stdio
+
+    s = Settings()
+    logging.basicConfig(level=logging.WARNING, stream=sys.stderr)  # stdout belongs to the protocol
+    target = url or f"ws://{s.control_host}:{s.control_port}"
+    secret = token or s.control_token
+    if not secret:
+        path = s.control_token_path()
+        if path.exists():
+            secret = path.read_text(encoding="utf-8").strip()
+    if not secret:
+        typer.echo("no control token: start the mind first (`emeth run`) or set EMETH_CONTROL_TOKEN", err=True)
+        raise typer.Exit(2)
+    asyncio.run(serve_stdio(ControlClient(target, secret)))
 
 
 @app.command()

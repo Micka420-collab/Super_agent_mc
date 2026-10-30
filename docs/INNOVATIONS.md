@@ -71,27 +71,31 @@ plus petit que prévu ne déraille rien. Il préfère l'essence de bois que le c
 blocs de stockage (bloc de fer → lingots), n'est pas dupe des recettes de teinture, et déclare honnêtement ce qu'il ne
 sait pas obtenir. `mine` ne récolte que les cultures mûres, comme un joueur patient.
 
+### 12. Un mentor à l'oreille : la façade MCP qui ne télécommande pas
+L'agent est un serveur MCP (`emeth mcp`, sans dépendance) : depuis Claude Code, Claude Desktop ou Codex on voit par ses
+yeux (`emeth_look` renvoie la rétine en image), on fouille sa mémoire et sa timeline, on lit ses buts — et on lui
+**parle** (`emeth_tell`). Ce qui est dit arrive dans sa pensée suivante comme un bloc `[MENTOR]`, pesé comme le conseil
+d'un ami, consommé une fois, et laisse un épisode `mentor_in` dans sa mémoire : il peut remercier, ignorer, discuter.
+Aucun outil ne commande le corps. C'est la relation maître/apprenti plutôt que la manette, et c'est aussi le canal que
+le tableau de bord utilisera (`ControlAPI`, ADR-0006). Prochaine étape naturelle : l'esprit consommant à son tour
+d'autres serveurs MCP (wiki du serveur, Discord) comme des sens supplémentaires.
+
 ## Conçu, à coder ensuite (voir ROADMAP)
 
-### 12. Sandbox d'imagination (jumeau du monde)
+### 13. Sandbox d'imagination (jumeau du monde)
 Avant un plan risqué (descente en mine, traversée de lave, grosse construction), **répéter** le plan sur une copie locale du
 monde : `prismarine-world` + `prismarine-physics` permettent de simuler les déplacements et les poses de blocs sans
 envoyer un paquet, à vitesse accélérée ; variante lourde : un serveur headless avec la **même seed** (la génération est
 déterministe) pour vérifier qu'un trajet existe. Personne ne fait de planification basée modèle avec un simulateur exact.
 
-### 13. Boucle vocale complète
+### 14. Boucle vocale complète
 L'API Simple Voice Chat expose `MicrophonePacketEvent` (micro des joueurs → PCM) et `createAudioSender(connection)`
 (simuler le micro d'un joueur **sans le mod**, donc parfait pour un compte bot). Plugin serveur → WebSocket → Whisper →
 esprit → TTS (Kokoro local ou API) → voix du bot. Toutes les pièces existent, aucune intégration publique.
 
-### 14. Récap vidéo quotidien
+### 15. Récap vidéo quotidien
 HyperFrames rend du HTML en vidéo déterministe en batch. Timeline + frames de rétine + stats du jour → `rows.json` →
 template → mp4 : l'agent publie son propre vlog.
-
-### 15. Façade MCP
-Exposer l'agent comme serveur MCP (`observe`, `say`, `set_goal`, `memory_search`, `render`) : Claude Desktop ou Codex
-peuvent le conseiller, le « posséder », ou l'utiliser comme outil dans d'autres workflows ; et inversement l'esprit peut
-consommer d'autres serveurs MCP (wiki, météo du serveur, Discord).
 
 ### 16. Mémoire de style architectural
 `scan_region` sur les constructions des joueurs → extraction de palettes et de formes → une « culture » du serveur que

@@ -19,8 +19,8 @@ docs, CI.
 - [ ] ViaProxy documenté pour 26.2/26.3 ; test e2e sur 26.1.
 
 ## M3 — Présence
-- [ ] Façade MCP de l'esprit (`observe`, `say`, `set_goal`, `memory_search`, `render`).
-- [ ] Tableau de bord web (WebSocket localhost, protocole zod) : contexte, pulsions, graphe, rétine, coûts.
+- [x] Façade MCP de l'esprit (`emeth mcp`, ADR-0006) : status/observe/look/memory_search/timeline/goals/skills + tell (mentor)/suggest_goal/say, sur un canal de contrôle local réutilisable par le tableau de bord — validée en direct (30 oct. 2026).
+- [ ] Tableau de bord web sur le canal de contrôle (`ControlAPI`) : contexte, pulsions, graphe, rétine, coûts.
 - [ ] Boucle vocale : plugin Simple Voice Chat → WS → Whisper → esprit → TTS → `createAudioSender`.
 - [ ] Récap vidéo quotidien (HyperFrames) depuis la timeline + frames de rétine.
 

@@ -328,7 +328,7 @@ export class Observer {
     const held = entity.heldItem;
     if (held) view.heldItem = held.name;
     if (kind === 'item') {
-      const dropped = (entity as unknown as { getDroppedItem?: () => Item | null }).getDroppedItem?.();
+      const dropped = droppedItemOf(entity);
       if (dropped) {
         view.itemName = dropped.name;
         view.itemCount = dropped.count;
@@ -418,6 +418,19 @@ export class Observer {
 }
 
 /** Servers (and test servers) sometimes omit stats; never let a NaN reach the mind. */
+/**
+ * What a dropped-item entity holds. Servers (and server emulators) disagree on item metadata encoding;
+ * one odd entity must never break the whole observation, so failures read as "an item, unknown".
+ */
+export function droppedItemOf(entity: Entity): { name: string; count: number } | null {
+  try {
+    const item = (entity as unknown as { getDroppedItem?: () => Item | null }).getDroppedItem?.();
+    return item ? { name: item.name, count: item.count } : null;
+  } catch {
+    return null;
+  }
+}
+
 export function num(v: unknown, fallback: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
 }

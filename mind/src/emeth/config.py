@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     loop: LoopConfig = Field(default_factory=LoopConfig)
     # tiers → provider id preference order (first = preferred)
     tier_preferences: dict[str, list[str]] = Field(default_factory=dict)
+    # local control channel (MCP façade, dashboard); token generated and written to data/control.token when empty
+    control_enabled: bool = True
+    control_host: str = "127.0.0.1"
+    control_port: int = 8766
+    control_token: str = ""
+
+    def control_token_path(self) -> Path:
+        return self.data_dir / "control.token"
 
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)

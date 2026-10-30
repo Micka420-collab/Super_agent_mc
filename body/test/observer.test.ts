@@ -61,3 +61,14 @@ describe('observer', () => {
     expect(frame.description.length).toBeGreaterThan(10);
   });
 });
+
+describe('dropped items', () => {
+  it('never lets a malformed item entity break perception', async () => {
+    const { droppedItemOf } = await import('../src/perception/observer.js');
+    const broken = { getDroppedItem: () => { throw new TypeError("Cannot read properties of undefined (reading 'present')"); } } as never;
+    expect(droppedItemOf(broken)).toBeNull();
+    const fine = { getDroppedItem: () => ({ name: 'oak_log', count: 3 }) } as never;
+    expect(droppedItemOf(fine)).toEqual({ name: 'oak_log', count: 3 });
+    expect(droppedItemOf({} as never)).toBeNull();
+  });
+});

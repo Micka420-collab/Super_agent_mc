@@ -13,6 +13,7 @@ from emeth.cognition.loop import CognitiveLoop
 from emeth.cognition.planner import Planner
 from emeth.cognition.skills import SkillSynthesizer
 from emeth.config import Settings, load_providers
+from emeth.control import ControlAPI, ControlServer
 from emeth.llm.embeddings import Embedder
 from emeth.llm.router import LLMRouter
 from emeth.memory.consolidation import Consolidator
@@ -47,9 +48,14 @@ class Mind:
     critic: Critic
     body: BodyClient
     loop: CognitiveLoop | None = None
+    control: ControlServer | None = None
 
     async def start(self) -> CognitiveLoop:
         await self.body.connect()
+        if self.settings.control_enabled:
+            self.control = ControlServer(ControlAPI(self), self.settings.control_host, self.settings.control_port, self.settings.control_token)
+            await self.control.start()
+            self.control.write_token(self.settings.control_token_path())
         await self.skills.sync_from_disk()
         synthesizer = SkillSynthesizer(self.router, self.body, self.skills, max_attempts=self.settings.loop.max_skill_attempts)
         self.loop = CognitiveLoop(
@@ -75,6 +81,8 @@ class Mind:
     async def close(self) -> None:
         if self.loop:
             self.loop.stop()
+        if self.control:
+            await self.control.stop()
         await self.body.close()
         await self.router.aclose()
         self.graph.save()

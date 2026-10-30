@@ -117,6 +117,8 @@ class CognitiveLoop:
         self._last_decision_at: float = 0.0
         self._consecutive_bad_decisions = 0
         self._wait_until: float = 0.0
+        # words from outside the game (the owner through the MCP façade / dashboard), consumed by the next thought
+        self._mentor_inbox: list[tuple[str, str]] = []
 
     # ---------------------------------------------------------------------------------------
     # lifecycle
@@ -385,6 +387,9 @@ class CognitiveLoop:
             pages = []
         blocks.memories = self.wiki.brief(max_chars=2500, query_pages=pages)
         blocks.timeline = self.timeline.render()
+        mentor = self._mentor_block()
+        if mentor:
+            blocks.extra["MENTOR"] = mentor
         blocks.decision = self._decision_block(obs)
         return blocks.render()
 
@@ -493,6 +498,33 @@ class CognitiveLoop:
         if obs.entities.players or to:
             self.identity.bump(conversations=1)
             self.drives.on_event("social")
+
+    # ---------------------------------------------------------------------------------------
+    # control surface (MCP façade, dashboard) — everything goes through the same memory/timeline
+    # ---------------------------------------------------------------------------------------
+    async def speak(self, text: str, to: str | None = None) -> None:
+        """Say something in game on behalf of the mind (logged like any speech)."""
+        obs = self.body.latest_observation or await self.body.observe("compact")
+        await self._say(text, to, obs)
+
+    def hear_mentor(self, text: str, source: str = "mentor") -> None:
+        """A message from outside the game. It is advice, not a command: the next decision weighs it."""
+        text = text.strip()[:1200]
+        if not text:
+            return
+        self._mentor_inbox.append((source, text))
+        self.timeline.add("mentor_in", f"{source} (outside the game): {text}", actors=[source], importance=0.6)
+        self.wake(f"mentor:{source}")
+
+    def _mentor_block(self) -> str:
+        if not self._mentor_inbox:
+            return ""
+        lines = [f"{src} says: {txt}" for src, txt in self._mentor_inbox]
+        self._mentor_inbox.clear()
+        return (
+            "Words from outside the game, from someone who looks after you. Weigh them like advice from a trusted friend — "
+            "you still decide, and you may answer them through `speech` only if players would understand it; otherwise act, or note it.\n" + "\n".join(lines)
+        )
 
     def _cancel_action(self, reason: str) -> None:
         if self._action_task and not self._action_task.done():

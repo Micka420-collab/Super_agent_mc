@@ -39,11 +39,14 @@ Tout a été vérifié contre l'état de l'art d'octobre 2026 (voir [`docs/RESEA
 | Code généré exécuté par `eval` dans le processus du bot | **Sandbox à trois couches** : analyse statique acorn → worker thread → `vm`, budget temps dur, trace des appels |
 | Construction = templates JSON ou liste de coordonnées | **DSL d'architecte** paramétrique → blueprint ordonné + nomenclature + critique ASCII/vision |
 | Personnalité fixe | **Autonomie gagnée** : 6 niveaux (nouveau-né → éveillé) débloqués par les jours survécus, skills, amitiés, constructions |
+| « get diamond_pickaxe » = le LLM enchaîne des appels à l'aveugle | **Planificateur d'approvisionnement** : item → arbre mine/table/outil/four/chasse compilé depuis les recettes et loot tables, compacté avec preuve de faisabilité, replanifié après chaque étape |
+| L'agent est une boîte noire ou une manette | **Façade MCP** : depuis Claude Code/Desktop ou Codex, on voit par ses yeux, on lit sa mémoire et on lui parle en mentor — il pèse le conseil, il ne l'exécute pas |
 
 ## État du projet (30 oct. 2026)
 
-- ✅ Corps complet, typé, **45 tests** (39 unitaires + 6 e2e sur un vrai serveur Minecraft JS 1.21.1 : spawn, pathfinding, minage, skill live, bridge authentifié).
-- ✅ Esprit complet, **34 tests** (routeur, mémoire, cognition, builder, boucle de bout en bout avec un corps simulé), `ruff` + `mypy` propres.
+- ✅ Corps complet, typé, **77 tests** (69 unitaires + 8 e2e sur un vrai serveur Minecraft JS 1.21.1 : spawn, pathfinding, minage, pose et construction, planification d'approvisionnement, skill live, bridge authentifié), 51 primitives.
+- ✅ Esprit complet, **39 tests** (routeur, mémoire, cognition, builder, boucle de bout en bout avec un corps simulé, canal de contrôle et façade MCP), `ruff` + `mypy` propres.
+- ✅ Chaîne complète validée en direct (`mind/scripts/live_smoke.py`) : corps réel ↔ esprit ↔ MCP (regarder, parler au mentor, répondre dans le jeu).
 - ⏳ Pas encore validé sur un serveur Paper avec de vraies clés LLM : c'est l'étape suivante (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)).
 - ⏳ Voix (Simple Voice Chat), dashboard, récap vidéo (HyperFrames), multi-agents : conçus, pas encore codés.
 
@@ -77,6 +80,15 @@ Configuration : `mind/providers.example.yaml` (fournisseurs et modèles par tier
 - Mentionnez son nom (`Emeth, viens voir ma maison`) ou chuchotez (`/msg Emeth ...`) : il se réveille et décide.
 - Le joueur `owner` de la persona est reconnu : ses demandes pèsent plus, ses attaques ne déclenchent pas la défense.
 - Il parle quand il a quelque chose à dire : le silence est une réponse valide. Sa « bavardise » se règle dans la persona.
+
+### Lui parler depuis Claude Code, Claude Desktop ou Codex (MCP)
+
+```bash
+claude mcp add emeth -- emeth mcp        # l'esprit doit tourner (`emeth run`) ; jeton lu dans mind/data/control.token
+```
+Outils : `emeth_status`, `emeth_observe`, `emeth_look` (sa rétine en image), `emeth_memory_search`, `emeth_timeline`,
+`emeth_goals`, `emeth_skills`, puis `emeth_tell` (un conseil qu'il pèsera à sa prochaine pensée), `emeth_suggest_goal`,
+`emeth_say`. Rien ne le télécommande : vous êtes son mentor, pas sa manette (ADR-0006).
 
 ## Comment il pense (une décision)
 
