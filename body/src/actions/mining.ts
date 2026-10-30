@@ -5,7 +5,7 @@ import { BodyError, ErrorCodes } from '../protocol.js';
 import { DEFAULT_PROFILE, goTo, goToBlock, type MovementProfile } from '../motor/movement.js';
 import { equipBestTool, findItem, hasFreeSlot, inventorySummary, normalizeName, resolveBlockNames, type ItemSummary } from '../motor/items.js';
 import { ProcurementPlanner } from '../motor/procurement.js';
-import { assessSite, cardinalFromYaw, stairStep, stairUpStep, summariseOres, tunnelStep, type BlockLookup, type Cardinal, type Course, type NamedCell } from '../motor/digging.js';
+import { assessSite, cardinalFromYaw, isTerrain, nextApproachStep, stairStep, stairUpStep, summariseOres, tunnelStep, type BlockLookup, type Cardinal, type Course, type NamedCell } from '../motor/digging.js';
 import { describeOre, miningAdvice } from '../motor/ores.js';
 import { placeBlockAt } from '../motor/placing.js';
 import { raceAbort, sleep, throwIfAborted } from '../util/async.js';
@@ -48,9 +48,66 @@ export function isHarvestable(ctx: ActionContext, block: Block): boolean {
   return Number.isFinite(age) ? age >= Math.max(...ages) : true;
 }
 
+const REACH = 4.4;
+
+function eyeDistance(bot: ActionContext['bot'], p: { x: number; y: number; z: number }): number {
+  const e = bot.entity.position;
+  return distance({ x: e.x, y: e.y + 1.62, z: e.z }, { x: p.x + 0.5, y: p.y + 0.5, z: p.z + 0.5 });
+}
+
+/**
+ * Get within reach of a block and in sight of it, the way a player does when it is behind stone: walk if there is a
+ * way, otherwise dig a surveyed 1×2 corridor through natural terrain towards it, then break whatever terrain still
+ * hides it. Seen live: `mine iron_ore` timed out twice on an ore 5 blocks away behind the wall, and reported the ore
+ * as mined while it was still there.
+ */
+async function reachBlock(ctx: ActionContext, target: Block): Promise<void> {
+  const bot = ctx.bot;
+  const lookup: BlockLookup = (x, y, z) => bot.blockAt(new Vec3(x, y, z))?.name ?? null;
+  const same = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => a.x === b.x && a.y === b.y && a.z === b.z;
+  try {
+    await goToBlock(bot, target.position, ctx.signal, 30_000);
+  } catch (err) {
+    if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+    ctx.log.debug({ err }, 'no walking path to the block: digging a way');
+  }
+  for (let i = 0; i < 24 && eyeDistance(bot, target.position) > REACH; i++) {
+    throwIfAborted(ctx.signal);
+    const feet = bot.entity.position.floored();
+    const step = nextApproachStep(feet, target.position);
+    if (!step) break;
+    const course: Course = step.kind === 'tunnel' ? tunnelStep(feet, step.direction, 1) : step.kind === 'up' ? stairUpStep(feet, step.direction, 1) : stairStep(feet, step.direction, 1);
+    if (course.clear.some((c) => same(c, target.position))) break; // the target itself is next to us
+    const report = assessSite(lookup, course);
+    if (!report.ok) throw new BodyError(ErrorCodes.NO_PATH, `cannot dig a way to the ${target.name}: ${report.stop ?? 'unsafe'}`, { hazards: report.hazards });
+    const built = course.clear.map((c) => lookup(c.x, c.y, c.z)).filter((n): n is string => !!n && !AIR_NAMES.has(n) && !isTerrain(n));
+    if (built.length) throw new BodyError(ErrorCodes.NO_PATH, `the way to the ${target.name} goes through ${built[0]}, which someone placed — I do not dig through builds`);
+    requirePickaxe(ctx);
+    for (const cell of [...course.clear].reverse()) await clearCell(ctx, cell, report.falling.length > 0);
+    try {
+      await goTo(bot, { x: course.feet.x + 0.5, y: course.feet.y, z: course.feet.z + 0.5 }, 0.6, ctx.signal, { timeoutMs: 12_000, profile: COURSE_PROFILE });
+    } catch (err) {
+      if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+      break;
+    }
+  }
+  if (eyeDistance(bot, target.position) > REACH + 0.6) throw new BodyError(ErrorCodes.NO_PATH, `could not get within reach of the ${target.name} (${eyeDistance(bot, target.position).toFixed(1)} m)`);
+  // clear the line of sight: break the terrain between my eyes and the block
+  for (let i = 0; i < 4; i++) {
+    const e = bot.entity.position;
+    const eye = { x: e.x, y: e.y + 1.62, z: e.z };
+    const c = { x: target.position.x + 0.5, y: target.position.y + 0.5, z: target.position.z + 0.5 };
+    const len = distance(eye, c);
+    const hit = ctx.observer.raycast(eye, { x: (c.x - eye.x) / len, y: (c.y - eye.y) / len, z: (c.z - eye.z) / len }, len + 0.5);
+    if (!hit || same(hit.position, target.position)) return;
+    if (!isTerrain(hit.name)) throw new BodyError(ErrorCodes.NO_PATH, `${hit.name} is in the way of the ${target.name}, and I do not dig through builds`);
+    await clearCell(ctx, hit.position, false);
+  }
+}
+
 async function digBlock(ctx: ActionContext, block: Block): Promise<void> {
   const bot = ctx.bot;
-  await goToBlock(bot, block.position, ctx.signal);
+  await reachBlock(ctx, block);
   throwIfAborted(ctx.signal);
   await equipBestTool(bot, block);
   await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true);
@@ -110,7 +167,22 @@ defineAction({
           bot.stopDigging();
         },
       });
-      mined = targets.length;
+      // count what really broke: collectBlock skips unreachable blocks silently (ignoreNoPath)
+      mined = targets.filter((b) => bot.blockAt(b.position)?.name !== b.name).length;
+      // what it could not reach: dig a way to it, as a player would, until the count is met
+      for (const b of targets) {
+        if (mined >= a.count) break;
+        if (bot.blockAt(b.position)?.name !== b.name) continue;
+        throwIfAborted(ctx.signal);
+        try {
+          await digBlock(ctx, b);
+          mined += 1;
+        } catch (err) {
+          if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+          ctx.log.debug({ err }, 'could not reach a target block');
+        }
+      }
+      if (mined === 0) throw new BodyError(ErrorCodes.NO_PATH, `found ${first.name} but could not reach any of it (behind walls or out of reach) — try \`dig\` on one at exact coordinates`, { at: targets.slice(0, 3).map((b) => b.position) });
     } else {
       for (const b of targets) {
         throwIfAborted(ctx.signal);

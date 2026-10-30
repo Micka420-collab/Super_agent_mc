@@ -70,3 +70,19 @@ describe('digging survey', () => {
     expect(r.floor).toBe('iron_ore');
   });
 });
+
+describe('digging a way to a block', () => {
+  it('heads along the larger horizontal gap, climbing or descending when the target is higher or lower', async () => {
+    const { nextApproachStep } = await import('../src/motor/digging.js');
+    expect(nextApproachStep({ x: -56.4, y: 42, z: -644.3 }, { x: -58, y: 42, z: -640 })).toEqual({ kind: 'tunnel', direction: 'south' });
+    expect(nextApproachStep({ x: 0, y: 40, z: 0 }, { x: 6, y: 47, z: 1 })).toEqual({ kind: 'up', direction: 'east' });
+    expect(nextApproachStep({ x: 0, y: 40, z: 0 }, { x: 0, y: 30, z: -5 })).toEqual({ kind: 'down', direction: 'north' });
+    expect(nextApproachStep({ x: 0, y: 40, z: 0 }, { x: 0.5, y: 45, z: 0.2 })).toBeNull();
+  });
+
+  it('digs through terrain only, never through what someone built', async () => {
+    const { isTerrain } = await import('../src/motor/digging.js');
+    for (const n of ['stone', 'deepslate', 'iron_ore', 'deepslate_iron_ore', 'dirt', 'gravel', 'granite']) expect(isTerrain(n)).toBe(true);
+    for (const n of ['cobblestone', 'oak_planks', 'glass', 'stone_bricks', 'chest', 'crafting_table']) expect(isTerrain(n)).toBe(false);
+  });
+});
