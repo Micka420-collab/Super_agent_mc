@@ -9,7 +9,10 @@ import { BodyError, ErrorCodes } from '../protocol.js';
 import { sleep, waitFor } from '../util/async.js';
 import { distance } from '../util/geometry.js';
 import { findItem } from './items.js';
-import { goTo } from './movement.js';
+import { CAREFUL_PROFILE, goTo, type MovementProfile } from './movement.js';
+
+/** Moving around a construction site: never dig (the pathfinder would happily eat the blocks we just placed). */
+export const BUILD_PROFILE: MovementProfile = { ...CAREFUL_PROFILE, canDig: false, allow1by1towers: false, allowParkour: false };
 
 /** Blocks that cannot be used as a placement reference / are replaced by placing. */
 const NON_SOLID = new Set(['air', 'cave_air', 'void_air', 'water', 'lava', 'grass', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'seagrass', 'kelp', 'vine', 'light']);
@@ -47,6 +50,51 @@ export function occupiesCell(bot: Bot, pos: Vec3): boolean {
   return feet.equals(pos) || head.equals(pos);
 }
 
+/**
+ * Does the player's hitbox (0.6 × 1.8, centred on the position) overlap the target cell? Servers refuse to place a
+ * block inside an entity, and a body standing on a cell boundary straddles two cells — `occupiesCell` misses that.
+ */
+export function hitboxIntersectsCell(position: Vec3Like, cell: Vec3Like, halfWidth = 0.3, height = 1.8): boolean {
+  const minX = position.x - halfWidth;
+  const maxX = position.x + halfWidth;
+  const minZ = position.z - halfWidth;
+  const maxZ = position.z + halfWidth;
+  const minY = position.y;
+  const maxY = position.y + height;
+  const cx = Math.floor(cell.x);
+  const cy = Math.floor(cell.y);
+  const cz = Math.floor(cell.z);
+  return maxX > cx && minX < cx + 1 && maxY > cy && minY < cy + 1 && maxZ > cz && minZ < cz + 1;
+}
+
+/**
+ * A standing cell near `target` from which it can be placed: two cells away on at least one axis (so the hitbox
+ * cannot touch the target even when the body is off-centre), free at feet and head, with a floor under it, and
+ * within arm's reach. Nearest to the body first. Integer cell coordinates — pathfinder goals want nodes.
+ */
+export function standOffSpot(bot: Bot, target: Vec3, maxReach = 4.0): Vec3 | null {
+  const me = bot.entity.position;
+  const centre = target.offset(0.5, 0.5, 0.5);
+  const candidates: Vec3[] = [];
+  for (const dx of [-3, -2, -1, 0, 1, 2, 3]) {
+    for (const dz of [-3, -2, -1, 0, 1, 2, 3]) {
+      if (Math.abs(dx) < 2 && Math.abs(dz) < 2) continue;
+      for (const dy of [0, -1, -2, 1, -3, 2]) {
+        const cell = target.offset(dx, dy, dz);
+        const feet = bot.blockAt(cell);
+        const head = bot.blockAt(cell.offset(0, 1, 0));
+        const floor = bot.blockAt(cell.offset(0, -1, 0));
+        if (!feet || !head || !floor) continue;
+        if (!isReplaceable(feet) || !isReplaceable(head) || isReplaceable(floor) || floor.boundingBox !== 'block') continue;
+        if (distance(cell.offset(0.5, 1.6, 0.5), centre) > maxReach) continue;
+        candidates.push(cell);
+      }
+    }
+  }
+  candidates.sort((a, b) => distance(me, a.offset(0.5, 0, 0.5)) - distance(me, b.offset(0.5, 0, 0.5)));
+  return candidates[0] ?? null;
+}
+
 export interface PlaceResult {
   placed: boolean;
   position: Vec3Like;
@@ -71,21 +119,25 @@ export async function placeBlockAt(bot: Bot, itemName: string, pos: Vec3Like, si
   let ref = findReference(bot, target);
   if (!ref) throw new BodyError(ErrorCodes.BAD_REQUEST, `no solid block next to ${target} to place against`);
 
-  // Move so the reference face is within reach and we are not standing in the target cell.
+  // Move so the reference face is within reach and our body is clear of the target cell. Never dig on the way:
+  // the pathfinder would otherwise eat the blocks we just placed to reach a standing spot.
   const eyeToTarget = () => distance(bot.entity.position.offset(0, 1.6, 0), target.offset(0.5, 0.5, 0.5));
-  if (occupiesCell(bot, target) || eyeToTarget() > 4.2) {
-    // stand ~2 blocks away from the target, on the side closest to where we are now
-    const dir = bot.entity.position.minus(target.offset(0.5, 0, 0.5));
-    const horiz = Math.hypot(dir.x, dir.z) || 1;
-    const stand = target.offset(0.5 + (dir.x / horiz) * 2, 0, 0.5 + (dir.z / horiz) * 2);
-    await goTo(bot, stand, 0.8, signal, { timeoutMs: 20_000 });
-    if (eyeToTarget() > 5.5) await goTo(bot, { x: target.x + 0.5, y: target.y, z: target.z + 0.5 }, 2.5, signal, { timeoutMs: 20_000 });
+  const inTheWay = () => occupiesCell(bot, target) || hitboxIntersectsCell(bot.entity.position, target);
+  for (let attempt = 0; attempt < 2 && (inTheWay() || eyeToTarget() > 4.2); attempt++) {
+    const spot = standOffSpot(bot, target, attempt === 0 ? 4.0 : 5.0);
+    if (spot) {
+      await goTo(bot, spot, 0.5, signal, { timeoutMs: 20_000, profile: BUILD_PROFILE });
+    } else {
+      // no proper spot computed (unloaded edges, water…): get within reach along the line from here
+      const dir = bot.entity.position.minus(target.offset(0.5, 0, 0.5));
+      const horiz = Math.hypot(dir.x, dir.z) || 1;
+      await goTo(bot, target.offset(0.5 + (dir.x / horiz) * 2.5, 0, 0.5 + (dir.z / horiz) * 2.5), 1.0, signal, { timeoutMs: 20_000, profile: BUILD_PROFILE });
+    }
+    await sleep(80, signal);
     ref = findReference(bot, target) ?? ref;
   }
-  if (occupiesCell(bot, target)) {
-    const side = target.offset(1.5, 0, 0.5);
-    await goTo(bot, side, 0.6, signal, { timeoutMs: 10_000 });
-  }
+  if (inTheWay()) throw new BodyError(ErrorCodes.NO_PATH, `cannot step clear of ${target} to place ${itemName} there`);
+  if (eyeToTarget() > 5.5) throw new BodyError(ErrorCodes.NO_PATH, `cannot get within reach of ${target} without digging`);
 
   await bot.equip(item, 'hand');
   bot.setControlState('sneak', true);

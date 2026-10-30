@@ -5,7 +5,9 @@
  *   npm run test:e2e
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import path from 'node:path';
 import { WebSocket } from 'ws';
 import { Vec3 } from 'vec3';
 import { loadConfig } from '../../src/config.js';
@@ -208,6 +210,50 @@ describe('body e2e (flying-squid)', () => {
     expect((cleared.result as { dug: number }).dug).toBeGreaterThanOrEqual(5);
   }, 120_000);
 
+  it('builds a designed cottage (floor, log corners, walls, window panes) from a blueprint', async () => {
+    const bot = runtime!.bot;
+    const Item = createRequire(import.meta.url)('prismarine-item')(bot.registry) as new (id: number, count: number) => unknown;
+    const cottage = JSON.parse(readFileSync(path.join(__dirname, 'fixtures', 'cottage.json'), 'utf8')) as { blocks: { name: string; x: number; y: number; z: number }[] };
+    // walls and windows only: the roof doubles the block count with the same primitives, and flying-squid mangles
+    // doors and torches (it maps the door item to a wrong block and clears neighbouring cells) — those are for Paper.
+    const base = bot.entity.position.floored();
+    const origin = { x: base.x + 6, y: base.y, z: base.z + 6 };
+    const blocks = cottage.blocks.filter((b) => b.y <= 3 && b.name !== 'oak_door' && b.name !== 'torch').map((b) => ({ ...b, x: b.x + origin.x, y: b.y + origin.y, z: b.z + origin.z }));
+    const bom: Record<string, number> = {};
+    for (const b of blocks) bom[b.name] = (bom[b.name] ?? 0) + 1;
+    for (let slot = 36; slot <= 44; slot++) await bot.creative.setInventorySlot(slot, null as never);
+    let slot = 36;
+    for (const [name, count] of Object.entries(bom)) {
+      for (let left = count; left > 0; left -= 64) await bot.creative.setInventorySlot(slot++, new Item(bot.registry.itemsByName[name]!.id, Math.min(64, left)) as never);
+    }
+    await new Promise((r) => setTimeout(r, 300));
+    const dry = await runtime!.runner.run({ action: 'plan_build', args: { blocks } });
+    const plan = dry.result as { feasible: boolean; order: unknown[]; missing: Record<string, number>; unsupported: unknown[] };
+    expect(plan.feasible, JSON.stringify(dry).slice(0, 400)).toBe(true);
+    expect(plan.order).toHaveLength(blocks.length);
+    expect(plan.missing).toEqual({});
+    const built = await runtime!.runner.run({ action: 'build', args: { blocks } });
+    expect(built.ok, JSON.stringify(built).slice(0, 600)).toBe(true);
+    const r = built.result as { placed: number; failureCount: number; failures: { block: { name: string }; error: string }[] };
+    expect(r.placed, JSON.stringify(r.failures.slice(0, 5))).toBe(blocks.length);
+    expect(r.failureCount).toBe(0);
+    // the world agrees: log corners, planks and window panes stand exactly where the blueprint says
+    const region = await runtime!.runner.run({ action: 'scan_region', args: { min: origin, max: { x: origin.x + 6, y: origin.y + 3, z: origin.z + 6 } } });
+    const present = new Set(((region.result as { blocks: { x: number; y: number; z: number; name: string }[] }).blocks).map((b) => `${b.x},${b.y},${b.z}:${b.name}`));
+    const missingCells = blocks.filter((b) => !present.has(`${b.x},${b.y},${b.z}:${b.name}`));
+    expect(missingCells).toEqual([]);
+    const counts = (region.result as { counts: Record<string, number> }).counts;
+    expect(counts['oak_log']).toBe(bom['oak_log']);
+    expect(counts['glass_pane']).toBe(bom['glass_pane']);
+    // a second pass has nothing left to do
+    const again = await runtime!.runner.run({ action: 'plan_build', args: { blocks } });
+    expect((again.result as { alreadyCorrect: unknown[]; order: unknown[] }).alreadyCorrect).toHaveLength(blocks.length);
+    expect((again.result as { order: unknown[] }).order).toHaveLength(0);
+    // step off the site so the next tests stand on plain ground again
+    const back = await runtime!.runner.run({ action: 'goto', args: { x: base.x - 3, y: base.y, z: base.z - 3, range: 1 } });
+    expect(back.ok, JSON.stringify(back)).toBe(true);
+  }, 400_000);
+
   it('plans procurement from the live inventory and surroundings (plan_get / get)', async () => {
     // flying-squid does not evaluate recipes server-side, so real crafting is covered by the Paper live
     // run; here we check the wiring: inventory → planner, nearby table detection, no-op and honest failure.
@@ -228,7 +274,8 @@ describe('body e2e (flying-squid)', () => {
 
     // once a table really stands next to us, the planner sees it and drops the placement step
     const base = bot.entity.position.floored();
-    const placed = await runtime!.runner.run({ action: 'place', args: { name: 'crafting_table', x: base.x + 2, y: base.y, z: base.z + 2 } });
+    const spot = [[2, 2], [-2, 2], [2, -2], [-2, -2], [3, 0], [0, 3], [-3, 0], [0, -3]].map(([dx, dz]) => new Vec3(base.x + dx!, base.y, base.z + dz!)).find((p) => bot.blockAt(p)?.name === 'air' && bot.blockAt(p.offset(0, -1, 0))?.name !== 'air') ?? new Vec3(base.x + 2, base.y, base.z + 2);
+    const placed = await runtime!.runner.run({ action: 'place', args: { name: 'crafting_table', x: spot.x, y: spot.y, z: spot.z } });
     expect(placed.ok, JSON.stringify(placed)).toBe(true);
     const withTable = await runtime!.runner.run({ action: 'plan_get', args: { name: 'wooden_pickaxe' } });
     expect((withTable.result as typeof plan).steps.map((s) => s.kind)).toEqual(['craft', 'craft', 'craft']);
@@ -245,7 +292,7 @@ describe('body e2e (flying-squid)', () => {
     expect(string.ok).toBe(false);
     expect(string.errorCode).toBe('MISSING_ITEM');
     expect(string.error).toMatch(/spider/);
-    await runtime!.runner.run({ action: 'dig', args: { x: base.x + 2, y: base.y, z: base.z + 2, collect: false } });
+    await runtime!.runner.run({ action: 'dig', args: { x: spot.x, y: spot.y, z: spot.z, collect: false } });
   }, 120_000);
 
   it('executes a sandboxed skill that uses the live api', async () => {

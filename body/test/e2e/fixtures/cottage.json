@@ -1,0 +1,876 @@
+{
+"name": "small house",
+"size": [
+7,
+8,
+7
+],
+"source": "mind: emeth.builder.compiler.house_spec(w=5, d=5, h=3), origin-relative",
+"bom": {
+"oak_planks": 118,
+"oak_log": 12,
+"glass_pane": 8,
+"torch": 4,
+"oak_door": 1
+},
+"blocks": [
+{
+"name": "oak_planks",
+"x": 0,
+"y": 0,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 0,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 0,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 0,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 0,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 0,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 0,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 0,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 0,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 0,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 0,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 0,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 0,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 0,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 0,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 0,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 0,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 0,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 0,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 0,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 0,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 0,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 0,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 0,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 0,
+"z": 4
+},
+{
+"name": "oak_log",
+"x": 0,
+"y": 1,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 1,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 1,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 1,
+"z": 2
+},
+{
+"name": "oak_door",
+"x": 2,
+"y": 1,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 1,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 1,
+"z": 0
+},
+{
+"name": "oak_log",
+"x": 0,
+"y": 1,
+"z": 4
+},
+{
+"name": "oak_log",
+"x": 4,
+"y": 1,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 1,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 1,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 1,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 1,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 1,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 1,
+"z": 3
+},
+{
+"name": "oak_log",
+"x": 4,
+"y": 1,
+"z": 4
+},
+{
+"name": "oak_log",
+"x": 0,
+"y": 2,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 2,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 2,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 2,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 2,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 2,
+"z": 0
+},
+{
+"name": "oak_log",
+"x": 0,
+"y": 2,
+"z": 4
+},
+{
+"name": "oak_log",
+"x": 4,
+"y": 2,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 2,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 2,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 2,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 2,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 2,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 2,
+"z": 3
+},
+{
+"name": "oak_log",
+"x": 4,
+"y": 2,
+"z": 4
+},
+{
+"name": "oak_log",
+"x": 0,
+"y": 3,
+"z": 0
+},
+{
+"name": "glass_pane",
+"x": 0,
+"y": 3,
+"z": 1
+},
+{
+"name": "glass_pane",
+"x": 1,
+"y": 3,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 3,
+"z": 2
+},
+{
+"name": "torch",
+"x": 1,
+"y": 3,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 3,
+"z": 0
+},
+{
+"name": "glass_pane",
+"x": 0,
+"y": 3,
+"z": 3
+},
+{
+"name": "glass_pane",
+"x": 3,
+"y": 3,
+"z": 0
+},
+{
+"name": "oak_log",
+"x": 0,
+"y": 3,
+"z": 4
+},
+{
+"name": "torch",
+"x": 1,
+"y": 3,
+"z": 3
+},
+{
+"name": "torch",
+"x": 3,
+"y": 3,
+"z": 1
+},
+{
+"name": "oak_log",
+"x": 4,
+"y": 3,
+"z": 0
+},
+{
+"name": "glass_pane",
+"x": 1,
+"y": 3,
+"z": 4
+},
+{
+"name": "glass_pane",
+"x": 4,
+"y": 3,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 3,
+"z": 4
+},
+{
+"name": "torch",
+"x": 3,
+"y": 3,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 3,
+"z": 2
+},
+{
+"name": "glass_pane",
+"x": 3,
+"y": 3,
+"z": 4
+},
+{
+"name": "glass_pane",
+"x": 4,
+"y": 3,
+"z": 3
+},
+{
+"name": "oak_log",
+"x": 4,
+"y": 3,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 4,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 4,
+"z": -1
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 4,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": -1,
+"y": 4,
+"z": -1
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 4,
+"z": -1
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 4,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 4,
+"z": -1
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 4,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 4,
+"z": -1
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 4,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 4,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 4,
+"z": -1
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 4,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 4,
+"z": 5
+},
+{
+"name": "oak_planks",
+"x": 5,
+"y": 4,
+"z": -1
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 4,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": -1,
+"y": 4,
+"z": 5
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 4,
+"z": 5
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 4,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 4,
+"z": 5
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 4,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 4,
+"z": 5
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 4,
+"z": 5
+},
+{
+"name": "oak_planks",
+"x": 5,
+"y": 4,
+"z": 5
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 5,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": -1,
+"y": 5,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 5,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 5,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 5,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 5,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 5,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 5,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 5,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 5,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 5,
+"y": 5,
+"z": 0
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 5,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": -1,
+"y": 5,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 5,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 5,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 5,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 5,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 5,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 5,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 5,
+"y": 5,
+"z": 4
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 6,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": -1,
+"y": 6,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 6,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 6,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 6,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 6,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 6,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": -1,
+"y": 6,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 6,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 6,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 6,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 5,
+"y": 6,
+"z": 1
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 6,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 6,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 6,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 5,
+"y": 6,
+"z": 3
+},
+{
+"name": "oak_planks",
+"x": 0,
+"y": 7,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": -1,
+"y": 7,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 1,
+"y": 7,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 2,
+"y": 7,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 3,
+"y": 7,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 4,
+"y": 7,
+"z": 2
+},
+{
+"name": "oak_planks",
+"x": 5,
+"y": 7,
+"z": 2
+}
+]
+}

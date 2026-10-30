@@ -85,7 +85,8 @@ export async function goTo(
   opts: { timeoutMs?: number; profile?: MovementProfile } = {},
 ): Promise<void> {
   if (distance(bot.entity.position, target) <= range + 0.3) return;
-  if (opts.profile) bot.pathfinder.setMovements(buildMovements(bot, opts.profile));
+  // movements are sticky on the pathfinder: always state the profile so a careful build never leaks into the next walk
+  bot.pathfinder.setMovements(buildMovements(bot, opts.profile ?? DEFAULT_PROFILE));
   const goal = new goals.GoalNear(target.x, target.y, target.z, range);
   try {
     await raceAbort(bot.pathfinder.goto(goal), signal, {
@@ -101,6 +102,7 @@ export async function goTo(
 /** Stand next to (not inside) a block so it can be interacted with. */
 export async function goToBlock(bot: Bot, pos: Vec3Like, signal?: AbortSignal, timeoutMs = 60_000): Promise<void> {
   if (distance(bot.entity.position, { x: pos.x + 0.5, y: pos.y, z: pos.z + 0.5 }) <= 3.2) return;
+  bot.pathfinder.setMovements(buildMovements(bot, DEFAULT_PROFILE));
   const goal = new goals.GoalGetToBlock(pos.x, pos.y, pos.z);
   try {
     await raceAbort(bot.pathfinder.goto(goal), signal, { timeoutMs, onCancel: () => bot.pathfinder.stop() });

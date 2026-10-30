@@ -103,3 +103,19 @@ describe('entity classification', () => {
     expect(isThreat('hostile', 'creeper')).toBe(true);
   });
 });
+
+describe('placement safety', () => {
+  it('detects when the hitbox straddles the target cell', async () => {
+    const { hitboxIntersectsCell } = await import('../src/motor/placing.js');
+    // standing at the centre of (10, 5, 9): cell (10, 5, 8) is clear of the hitbox
+    expect(hitboxIntersectsCell({ x: 10.5, y: 5, z: 9.5 }, { x: 10, y: 5, z: 8 })).toBe(false);
+    // standing on the boundary (z = 8.9): the 0.6-wide box reaches into z = 8
+    expect(hitboxIntersectsCell({ x: 10.5, y: 5, z: 8.9 }, { x: 10, y: 5, z: 8 })).toBe(true);
+    // the cell under our feet is not intersected (y = 4 is below the box)
+    expect(hitboxIntersectsCell({ x: 10.5, y: 5, z: 9.5 }, { x: 10, y: 4, z: 9 })).toBe(false);
+    // the head cell is
+    expect(hitboxIntersectsCell({ x: 10.5, y: 5, z: 9.5 }, { x: 10, y: 6, z: 9 })).toBe(true);
+    // a block two levels up is clear (box top at 6.8 < 7)
+    expect(hitboxIntersectsCell({ x: 10.5, y: 5, z: 9.5 }, { x: 10, y: 7, z: 9 })).toBe(false);
+  });
+});

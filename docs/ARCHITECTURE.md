@@ -38,8 +38,10 @@ index.ts ─ createBody ─┬─ Observer (perception/observer.ts)   observatio
   `avoid_creeper` 75, `defend` 60 (jamais contre un joueur — c'est l'esprit qui décide), auto-eat via le plugin. Chaque
   déclenchement est rapporté (`reflex` start/end) pour que l'esprit raisonne sur ce que son corps a fait.
 - Déplacement : `mineflayer-pathfinder` avec profils (`DEFAULT` creuse/parkour, `CAREFUL` non), blocs protégés jamais
-  cassés en chemin (coffres, tables, verre). Pose de blocs : recherche de face de référence, `GoalPlaceBlock`, sneak,
-  vérification. Craft : table trouvée/craftée/posée automatiquement, feedback des ingrédients manquants ; four : choix du
+  cassés en chemin (coffres, tables, verre) ; le profil est redit à chaque déplacement (jamais hérité). Pose de blocs :
+  poste de tir calculé (`standOffSpot` : deux cellules d'écart sur un axe pour que la hitbox ne touche jamais la cible,
+  sol plein, à portée de bras), approche en profil `BUILD` **sans creuser** (le pathfinder mangeait sinon les blocs
+  fraîchement posés), face de référence, sneak, course entre l'accusé du serveur et un sondage local, vérification. Craft : table trouvée/craftée/posée automatiquement, feedback des ingrédients manquants ; four : choix du
   combustible, attente bornée, sortie récupérée.
 - **Faisabilité de construction** (`motor/buildplan.ts`, `plan_build`) : simulation point-fixe des poses — un bloc
   n'est posé que lorsqu'il a un voisin plein à cliquer (sol, bloc existant, bloc de la structure déjà posé) ; sortie :
