@@ -126,6 +126,10 @@ class CognitiveLoop:
         # metacognition: notices repeated failures and rejected thoughts, writes [REFLECTION]
         self.reflection = Reflection()
         self._action_sig: str = ""
+        # the latest valid thought, for the in-game companion plugin and the dashboard ("what is it thinking?")
+        self._last_thought: str = ""
+        self._last_intent: str = ""
+        self._last_speech: str = ""
         # words from outside the game (the owner through the MCP façade / dashboard), consumed by the next thought
         self._mentor_inbox: list[tuple[str, str]] = []
 
@@ -547,6 +551,10 @@ class CognitiveLoop:
         self._consecutive_bad_decisions = 0
         self.reflection.decision_accepted()
         self.timeline.add("plan", f"{d.reason[:200]} → {describe_decision(d)}", importance=0.2)
+        self._last_thought = d.reason[:300]
+        self._last_intent = describe_decision(d)[:200]
+        if d.speech:
+            self._last_speech = d.speech[:240]
         if d.goal_update:
             self._apply_goal_update(d.goal_update)
         if d.remember:
@@ -810,6 +818,9 @@ class CognitiveLoop:
             "drives": self.drives.state.__dict__,
             "goals": self.planner.progress(),
             "last_result": self._last_result_text[:200],
+            "thought": {"reason": self._last_thought, "intent": self._last_intent, "speech": self._last_speech, "at": self._last_decision_at},
+            "action": self._action_label if self._action_task is not None and not self._action_task.done() else None,
+            "task": (self.planner.current_task() or Task("")).description or None,
             "reflection": self.reflection.snapshot(),
             "router": self.router.health(),
         }

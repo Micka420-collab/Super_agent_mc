@@ -1,0 +1,117 @@
+{
+  "action": null,
+  "autonomy": {
+    "experience": 5.5,
+    "level": 0,
+    "stage": "newborn"
+  },
+  "body": {
+    "actions": 56,
+    "connected": true,
+    "minecraft": {
+      "host": "127.0.0.1",
+      "port": 25565,
+      "username": "Emeth",
+      "version": "1.21.11"
+    },
+    "username": "Emeth"
+  },
+  "drives": {
+    "curiosity": 0.2,
+    "hunger": 0.113,
+    "mastery": 0.25,
+    "mood": 0.745,
+    "order": 0.5,
+    "rest": 0.05,
+    "safety": 0.45,
+    "social": 0.24
+  },
+  "goals": {
+    "done": [
+      "planks",
+      "table"
+    ],
+    "goals": [
+      "Survival ladder: Punch a tree and collect 6 logs"
+    ],
+    "next": "wood",
+    "total": 21
+  },
+  "last_result": "look_at_player succeeded in 0.1s. Result: {\"done\": true}",
+  "name": "Emeth",
+  "nearby": {
+    "hostiles": 1,
+    "players": [
+      "Steve"
+    ]
+  },
+  "reflection": {
+    "attempts": 1,
+    "code_streak": null,
+    "failure_rate": 0.0,
+    "invalid_decisions": 0,
+    "same_failure": null,
+    "stuck": false
+  },
+  "router": {
+    "brain": {
+      "available": true,
+      "avg_latency_ms": 0,
+      "breaker": "closed",
+      "calls": 1,
+      "consecutive_failures": 0,
+      "cost_usd": 0.0,
+      "failures": 0,
+      "input_tokens": 10,
+      "last_error": "",
+      "output_tokens": 5
+    }
+  },
+  "self": {
+    "biome": "plains",
+    "day": 3,
+    "dimension": "overworld",
+    "food": 13.0,
+    "health": 17.0,
+    "held": "oak_planks",
+    "phase": "day",
+    "position": {
+      "x": 0.5,
+      "y": 64.0,
+      "z": 0.5
+    },
+    "xpLevel": 3.0
+  },
+  "stats": {
+    "actions": 1,
+    "decisions": 1,
+    "dreams": 0,
+    "errors": 0,
+    "instinct_decisions": 0,
+    "skills": 0,
+    "speeches": 1,
+    "started_at": 1700000000.0
+  },
+  "task": "Punch a tree and collect 6 logs",
+  "thought": {
+    "at": 1700000000.0,
+    "intent": "look_at_player({\"username\": \"Steve\"})",
+    "reason": "greet",
+    "speech": "Salut Steve !"
+  },
+  "threat": {
+    "count": 1,
+    "danger": 0.33,
+    "nearest": {
+      "distance": 9,
+      "name": "zombie"
+    },
+    "reasons": [
+      "zombie 9m",
+      "no armor",
+      "bare hands"
+    ],
+    "recommendation": "fight",
+    "strength": 0.5
+  }
+}

@@ -1,0 +1,65 @@
+[
+  {
+    "actors": [],
+    "count": 1,
+    "kind": "discovery",
+    "text": "noticed crafting_table, chest nearby",
+    "ts": 1700000000.0
+  },
+  {
+    "actors": [],
+    "count": 1,
+    "kind": "achievement",
+    "text": "milestone reached: planks",
+    "ts": 1700000000.0
+  },
+  {
+    "actors": [],
+    "count": 1,
+    "kind": "achievement",
+    "text": "milestone reached: table",
+    "ts": 1700000000.0
+  },
+  {
+    "actors": [],
+    "count": 1,
+    "kind": "plan",
+    "text": "new goal: Punch a tree and collect 6 logs",
+    "ts": 1700000000.0
+  },
+  {
+    "actors": [],
+    "count": 1,
+    "kind": "plan",
+    "text": "greet → look_at_player({\"username\": \"Steve\"})",
+    "ts": 1700000000.0
+  },
+  {
+    "actors": [],
+    "count": 1,
+    "kind": "note",
+    "text": "noted: Steve's camp is at 12, 64, -40",
+    "ts": 1700000000.0
+  },
+  {
+    "actors": [],
+    "count": 1,
+    "kind": "said",
+    "text": "Salut Steve !",
+    "ts": 1700000000.0
+  },
+  {
+    "actors": [],
+    "count": 1,
+    "kind": "action",
+    "text": "look_at_player {'username': 'Steve'}",
+    "ts": 1700000000.0
+  },
+  {
+    "actors": [],
+    "count": 1,
+    "kind": "result",
+    "text": "look_at_player succeeded in 0.1s. Result: {\"done\": true}",
+    "ts": 1700000000.0
+  }
+]

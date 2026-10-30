@@ -87,19 +87,37 @@ class ControlAPI:
         out: dict[str, Any] = {
             "name": m.identity.name,
             "autonomy": {"level": m.identity.level.level, "stage": m.identity.level.name, "experience": round(m.identity.metrics.experience(), 1)},
-            "body": {"connected": body.connected.is_set(), "minecraft": (body.hello.minecraft if body.hello else None), "actions": len(body.hello.actions) if body.hello else 0},
+            "body": {
+                "connected": body.connected.is_set(),
+                "minecraft": (body.hello.minecraft if body.hello else None),
+                "username": (str(body.hello.minecraft.get("username")) if body.hello and body.hello.minecraft.get("username") else None),
+                "actions": len(body.hello.actions) if body.hello else 0,
+            },
             "goals": m.planner.progress(),
-            "drives": m.drives.state.__dict__,
+            "drives": {k: round(float(v), 3) for k, v in m.drives.state.__dict__.items()},
             "router": m.router.health(),
         }
         if m.loop is not None:
             snap = m.loop.snapshot()
-            out["stats"] = snap["stats"]
-            out["last_result"] = snap["last_result"]
+            for key in ("stats", "last_result", "thought", "action", "task", "reflection"):
+                out[key] = snap[key]
         obs = body.latest_observation
         if obs is not None:
             s = obs.self_
-            out["self"] = {"position": s.position.model_dump(), "dimension": s.dimension, "health": s.health, "food": s.food, "day": obs.world.day, "phase": obs.world.phase}
+            out["self"] = {
+                "position": s.position.model_dump(),
+                "dimension": s.dimension,
+                "health": s.health,
+                "food": s.food,
+                "xpLevel": s.xpLevel,
+                "day": obs.world.day,
+                "phase": obs.world.phase,
+                "biome": s.biome,
+                "held": s.heldItem.name if s.heldItem else None,
+            }
+            threat = obs.entities.threat
+            out["threat"] = threat.model_dump(mode="json") if threat is not None else None
+            out["nearby"] = {"players": [p.username for p in obs.entities.players if p.username][:8], "hostiles": len(obs.entities.hostiles)}
         return out
 
     async def m_observe(self, detail: str = "compact") -> Any:
@@ -264,6 +282,17 @@ class ControlServer:
         return secrets.compare_digest(token, self.token)
 
     async def _handle(self, ws: Any) -> None:
+        from websockets.exceptions import ConnectionClosed
+
+        try:
+            await self._serve(ws)
+        except ConnectionClosed:
+            # the client left mid-call (a plugin reloading, a dashboard tab closed): nothing to answer, nothing to log
+            log.debug("control client left before its answer was sent")
+
+    async def _serve(self, ws: Any) -> None:
+        from websockets.exceptions import ConnectionClosed
+
         path = getattr(getattr(ws, "request", None), "path", None)
         if not self._authorized(path):
             await ws.send(json.dumps({"id": None, "ok": False, "error": {"code": "UNAUTHORIZED", "message": "bad or missing token"}}))
@@ -286,6 +315,8 @@ class ControlServer:
                 await ws.send(json.dumps({"id": rid, "ok": True, "result": result}, default=str))
             except ControlError as exc:
                 await ws.send(json.dumps({"id": rid, "ok": False, "error": {"code": exc.code, "message": exc.message}}))
+            except ConnectionClosed:
+                raise
             except Exception as exc:  # noqa: BLE001
                 log.exception("control method %s failed", method)
                 await ws.send(json.dumps({"id": rid, "ok": False, "error": {"code": "INTERNAL", "message": str(exc)[:300]}}))
