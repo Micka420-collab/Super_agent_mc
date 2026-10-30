@@ -15,6 +15,9 @@ docs, CI.
 - [x] Planificateur d'approvisionnement déterministe (item → arbre de dépendances via recettes, loot tables et outils requis), compacté avec preuve de faisabilité, exposé comme primitives `plan_get` (gratuit) et `get` (exécute et replanifie à chaque étape) — 30 oct. 2026.
 - [x] Skills de base livrés dans `skills/library/` : `gather_logs`, `bootstrap_tools`, `emergency_shelter`, `torches` (via `get`), `safe_staircase_mine` (relevé lave/eau/gravier avant chaque marche, torches, arrêt santé), `return_home` (puits 1×1 prudent pour sortir de terre, puis marche).
 - [x] Construction réelle : décision `design {brief}` → `Constructor` (relevé de site `surface_height`, architecte DSL avec budget indicatif, ancrage devant l'agent, `plan_build` — ordre prouvé, blocs flottants/enfermés/occupés —, `build {procure: true, partial: true}`), lieu + page projet en mémoire. Validé contre le corps simulé ; à confirmer sur Paper.
+- [x] Mineur : distribution des minerais par profondeur, `descend` (escalier relevé à chaque marche), `tunnel` (branch-mining), `ore_info` ; `get` descend et creuse pour un minerai au lieu d'explorer la surface — e2e sur flying-squid (30 oct. 2026).
+- [x] Rapport de force (`entities.threat`) : danger 0–1 + `fight/retreat/flee` dans l'observation, les pulsions, l'instinct et le réflexe `flee` (`fleeAtDanger`) (30 oct. 2026).
+- [x] Réflexion (`[REFLECTION]`) : boucles d'échec détectées, alternatives par code d'erreur, température abaissée, abandon motivé ; jalons `slept`/`custom` enfin posables ; foyer marqué au lit + rappel « rentre avant la nuit » (30 oct. 2026).
 - [ ] Évaluateur `@miner-org/mineflayer-baritone` vs `mineflayer-pathfinder` (natation, échelles, parkour).
 - [x] ViaProxy documenté pour 26.2/26.3 (`server/README.md`) ; e2e sur 26.1 impossible sans serveur Java (flying-squid plafonne à 1.21.4) → à faire sur Paper (M1).
 

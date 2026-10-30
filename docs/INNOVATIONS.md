@@ -88,6 +88,33 @@ l'échelle de survie avec le planificateur (`get stone_pickaxe`), ou attend. Ell
 et la même mémoire que les décisions du modèle ; quand l'esprit revient, il lit « instinct : … » dans sa timeline et
 reprend là où son corps en était. Testé avec un fournisseur qui échoue à chaque appel : l'agent agit quand même.
 
+### 24. Il sait où vivent les minerais, et creuse comme un joueur
+Les agents publics « explorent » pour trouver du diamant, c'est-à-dire marchent en surface. EMETH porte la distribution
+des minerais (`motor/ores.ts`) et deux primitives de mineur : `descend {toY}` creuse un escalier 1×3 dont **chaque
+marche est relevée avant d'être ouverte** (`motor/digging.ts` : liquides et magma dans la marge, trou sous le prochain
+pas, gravier au-dessus, bedrock, chunk non chargé → stop avec la raison et la position), et `tunnel {length}` fait du
+branch-mining en prenant les minerais que les parois exposent. `get diamond` enchaîne seul : descendre à −58, tunnel,
+re-planifier. Validé en e2e sur un vrai serveur JS (escalier + tunnel + retour) et en simulation (`get diamond` sans
+jamais appeler `explore` ; refus net des débris antiques hors du Nether).
+
+### 25. Il lit le rapport de force avant de frapper
+Le corps score chaque situation (`motor/threat.ts`) : poids par espèce (creeper 1,8, squelette 1,4 avec portée
+étendue, warden 10), distance, points d'armure réels, dégâts de l'arme, bouclier, vie, nuit dehors → `danger` 0–1 et
+`fight / retreat / flee`. Le même nombre nourrit l'observation (« Odds: danger 72 % → flee (zombie 3m, zombie 4m,
+no armor) »), la pulsion de sécurité, l'instinct (fuir), le prompt (« ne lance pas un combat que tu ne peux pas gagner »)
+et le réflexe `flee` (`fleeAtDanger`), qui fuit désormais une foule à pleine vie — là où un seuil de vie fixe attendait
+d'être presque mort. Un creeper n'est jamais un combat.
+
+### 26. Il remarque qu'il tourne en rond
+`cognition/reflection.py` observe les tentatives (signature stable = primitive + arguments littéraux) et les pensées
+rejetées. Même appel raté deux fois avec le même code, trois échecs d'affilée sous le même code, deux pensées
+invalides, tâche à sa troisième tentative : le bloc `[REFLECTION]` nomme le motif et l'alternative propre au code
+d'erreur (`NOT_FOUND` sur un minerai → `descend`, `MISSING_TOOL` → `get` l'outil, `NO_PATH` → autre approche…). Montré
+deux fois sans effet, il exige un changement de méthode, de l'aide ou l'abandon motivé. Les pensées rejetées abaissent
+la température. Testé en boucle complète : au troisième `mine diamond_ore` raté, le modèle reçoit la réflexion et
+change de plan. Au passage, les jalons « lit » et `custom` (abri, ferme, portail) sont enfin posables : le sommeil pose
+`slept`, le critic pose `custom:*` — avant, l'échelle les reproposait sans fin.
+
 ## Conçu, à coder ensuite (voir ROADMAP)
 
 ### 13. Sandbox d'imagination (jumeau du monde)

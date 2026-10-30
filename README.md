@@ -19,7 +19,7 @@ Dépôt : `Micka420-collab/Super_agent_mc`. Monorepo : un **corps** TypeScript (
             │  corps (body/, TypeScript/Mineflayer)                                     │
             │  perception honnête (FOV, raycast) · rétine (image du POV sans GPU)      │
             │  réflexes au tick (lave, noyade, fuite, creeper, défense, faim)          │
-            │  53 primitives · sandbox de skills JS (acorn → worker → vm) · bridge      │
+            │  56 primitives · sandbox de skills JS (acorn → worker → vm) · bridge      │
             └───────────────────────────────▲──────────────────────────────────────────┘
                                              │ protocole Minecraft (joueur normal)
                                    serveur Minecraft (Paper / vanilla, 1.21.x – 26.1)
@@ -42,11 +42,14 @@ Tout a été vérifié contre l'état de l'art d'octobre 2026 (voir [`docs/RESEA
 | « get diamond_pickaxe » = le LLM enchaîne des appels à l'aveugle | **Planificateur d'approvisionnement** : item → arbre mine/table/outil/four/chasse compilé depuis les recettes et loot tables, compacté avec preuve de faisabilité, replanifié après chaque étape |
 | Panne d'API = agent figé, la nuit l'emporte | **Instinct** : politique déterministe (manger, s'abriter, dormir, étape suivante de l'échelle via le planificateur) qui prend le relais quand aucun modèle ne répond, et laisse une trace que l'esprit relit à son retour |
 | L'agent est une boîte noire ou une manette | **Façade MCP** : depuis Claude Code/Desktop ou Codex, on voit par ses yeux, on lit sa mémoire et on lui parle en mentor — il pèse le conseil, il ne l'exécute pas |
+| « get diamond » = explorer la surface en espérant | **Il sait où vivent les minerais** : table de distribution par profondeur (diamant −58, fer 16…), `descend` creuse un escalier **relevé à chaque marche** (lave, eau, trou, gravier, chunk non chargé), `tunnel` fait du branch-mining et prend ce que les parois exposent ; `get` descend tout seul |
+| Combat = « frappe ce qui est à portée » ou seuil de vie fixe | **Rapport de force** calculé au tick : mobs (type, distance, tir), armure, arme, bouclier, vie, nuit → danger 0–1 et conseil `fight / retreat / flee` dans l'observation, les pulsions, l'instinct et les réflexes (fuite quand c'est perdu d'avance, même à pleine vie) |
+| L'agent répète la même action ratée jusqu'au budget | **Réflexion** : il remarque qu'il tourne en rond (même appel, même code d'erreur, pensées rejetées, tâche à la N-ième tentative), écrit `[REFLECTION]` avec l'alternative concrète, baisse la température, et finit par abandonner avec une raison |
 
 ## État du projet (30 oct. 2026)
 
-- ✅ Corps complet, typé, **88 tests** (79 unitaires + 9 e2e sur un vrai serveur Minecraft JS 1.21.1 : spawn, pathfinding, minage, pose, **un cottage de 71 blocs construit depuis une blueprint de l'architecte**, planification d'approvisionnement, skill live, bridge authentifié), 53 primitives.
-- ✅ Esprit complet, **52 tests** (routeur, mémoire, cognition, builder, boucle de bout en bout avec un corps simulé, canal de contrôle et façade MCP), `ruff` + `mypy` propres.
+- ✅ Corps complet, typé, **113 tests** (103 unitaires + 10 e2e sur un vrai serveur Minecraft JS 1.21.1 : spawn, pathfinding, minage, **escalier relevé + tunnel**, pose, **un cottage de 71 blocs construit depuis une blueprint de l'architecte**, planification d'approvisionnement, skill live, bridge authentifié), 56 primitives.
+- ✅ Esprit complet, **61 tests** (routeur, mémoire, cognition, réflexion, builder, boucle de bout en bout avec un corps simulé, canal de contrôle et façade MCP), `ruff` + `mypy` propres.
 - ✅ Chaîne complète validée en direct (`mind/scripts/live_smoke.py`) : corps réel ↔ esprit ↔ MCP (regarder, parler au mentor, répondre dans le jeu).
 - ⏳ Pas encore validé sur un serveur Paper avec de vraies clés LLM : c'est l'étape suivante (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)).
 - ⏳ Voix (Simple Voice Chat), récap vidéo (HyperFrames), sandbox d'imagination, multi-agents : conçus, pas encore codés.
@@ -110,7 +113,9 @@ rien à installer.
    (code → check statique → sandbox → feedback, 4 essais max) ; `wait`/`keep`/`none`.
 6. **Vérification** : le critic programmatique (delta d'inventaire, blocs placés…) puis LLM pour le flou ; les tâches
    réussies font progresser l'échelle et l'expérience ; les échecs nourrissent la critique du prochain essai.
-7. **Mémoire** : toutes les 24 lignes de timeline, réécriture des blocs `[PREVIOUSLY]`/`[ABOUT PLAYERS]` ; quand il dort,
+7. **Réflexion** : chaque tentative (primitive, skill, chantier) et chaque pensée rejetée alimentent un petit moniteur ;
+   quand un motif d'échec se répète, le bloc `[REFLECTION]` de la pensée suivante le nomme et propose l'alternative.
+8. **Mémoire** : toutes les 24 lignes de timeline, réécriture des blocs `[PREVIOUSLY]`/`[ABOUT PLAYERS]` ; quand il dort,
    **rêve** ; s'il a un livre vierge, il y écrit son journal du jour.
 
 ## Arborescence
