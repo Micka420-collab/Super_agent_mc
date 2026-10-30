@@ -178,3 +178,19 @@ async def test_watching_a_player_build_is_remembered_on_the_map_and_the_person(t
     person = loop.store.get_person("Steve")
     assert person is not None and any("builds things" in n for n in person.notes)
     await body.close()
+
+
+async def test_death_sets_a_recovery_goal_and_marks_the_place(tmp_path):
+    world = FakeWorld()
+    loop, body, provider = await make_loop(tmp_path, world)
+    reason, _ = loop._handle_event(BodyEvent(event="death", ts=0, payload={"position": {"x": 100, "y": 40, "z": -20}, "ts": 0}))  # noqa: SLF001
+    assert reason == "death"
+    goals = [g for g in loop.planner.goals if g.status == "active" and g.title.startswith("Recover my belongings")]
+    assert len(goals) == 1 and goals[0].priority == 2 and "(100, 40, -20)" in goals[0].title
+    assert any(n.label == "where I died" for n in loop.graph.nodes_of("place"))
+    assert loop.identity.metrics.deaths == 1
+    # dying again at the same spot does not stack goals
+    loop._handle_event(BodyEvent(event="death", ts=0, payload={"position": {"x": 100, "y": 40, "z": -20}, "ts": 0}))  # noqa: SLF001
+    assert len([g for g in loop.planner.goals if g.status == "active" and g.title.startswith("Recover")]) == 1
+    await asyncio.sleep(0)  # let the respawn task start
+    await body.close()

@@ -233,11 +233,24 @@ class CognitiveLoop:
                 self.social.on_attacked_by(str(src["username"]))
             return f"hurt by {who}", self.cfg.debounce_hurt_ms
         if kind == "death":
-            self.timeline.add("death", "I died", importance=0.9)
+            pos = p.get("position") if isinstance(p.get("position"), dict) else None
+            where = f" at ({pos['x']}, {pos['y']}, {pos['z']})" if pos else ""
+            self.timeline.add("death", f"I died{where}", importance=0.9)
             self.drives.on_event("death")
             self.identity.bump(deaths=1)
             self.identity.save(self.store)
             self._cancel_action("death")
+            if pos:
+                # a real player goes back for their things: the drops last five minutes
+                try:
+                    x, y, z = float(pos["x"]), float(pos["y"]), float(pos["z"])
+                    self.graph.mark_place("where I died", x, y, z, kind="place", notes="my items dropped here")
+                    title = f"Recover my belongings where I died ({x:.0f}, {y:.0f}, {z:.0f})"
+                    if not any(g.title == title and g.status == "active" for g in self.planner.goals):
+                        self.planner.add_goal(title, [Task(description=f"go back to ({x:.0f}, {y:.0f}, {z:.0f}) within 5 minutes and pick up my dropped items (collect_items), carefully — whatever killed me may still be there", kind="explore", max_attempts=2)], why="items despawn five minutes after death", priority=2, source="self")
+                        self.timeline.add("plan", "new goal: recover my belongings where I died", importance=0.6)
+                except (KeyError, TypeError, ValueError):
+                    pass
             asyncio.create_task(self._respawn_later())
             return "death", 0
         if kind == "respawn":
