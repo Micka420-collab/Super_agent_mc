@@ -11,6 +11,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from emeth.llm.base import FREE_ARGS_NOTE, free_args
 from emeth.llm.types import ChatRequest, ChatResponse, Message
 from emeth.protocol import ActionManifestEntry
 
@@ -25,7 +26,8 @@ DECISION_SCHEMA: dict[str, Any] = {
             "properties": {
                 "type": {"type": "string", "enum": ["primitive", "skill", "design", "wait", "keep", "none"]},
                 "name": {"type": "string", "description": "primitive name from the body interface (type=primitive)"},
-                "args": {"type": "object", "description": "arguments object for the primitive"},
+                "args": {"type": "object", "description": "leave empty; write the arguments in args_json"},
+                "args_json": {"type": "string", "description": "for type=primitive: " + FREE_ARGS_NOTE},
                 "goal": {"type": "string", "description": "for type=skill: the concrete, verifiable task to accomplish with a program"},
                 "brief": {"type": "string", "description": "for type=design: what to build, in one or two sentences (purpose, style, materials, orientation)"},
                 "size": {"type": "array", "items": {"type": "integer"}, "description": "for type=design: optional max [width, height, depth]"},
@@ -174,8 +176,7 @@ def parse_decision(response: ChatResponse, known_actions: set[str]) -> Decision:
             d.problems.append(f"unknown primitive {name!r}; use one of the body interface names")
         else:
             d.action_name = name
-            args = action.get("args") or {}
-            d.action_args = args if isinstance(args, dict) else {}
+            d.action_args = free_args(action)
     elif atype == "skill":
         goal = action.get("goal")
         if not isinstance(goal, str) or len(goal.strip()) < 4:

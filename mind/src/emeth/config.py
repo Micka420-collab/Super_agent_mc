@@ -30,6 +30,8 @@ class ProviderConfig(BaseModel):
     input_cost_per_m: float = 0.0
     output_cost_per_m: float = 0.0
     in_failover_queue: bool = True
+    # Anthropic `output_config.effort` (low|medium|high|xhigh|max) for models with adaptive thinking; None = model default
+    effort: str | None = None
 
 
 class LoopConfig(BaseModel):
@@ -67,6 +69,8 @@ class Settings(BaseSettings):
     control_host: str = "127.0.0.1"
     control_port: int = 8766
     control_token: str = ""
+    # hard cap on cumulative paid LLM spend in USD (0 = unlimited); persisted in data/logs/llm_spend.json
+    max_usd: float = 0.0
 
     def control_token_path(self) -> Path:
         return self.data_dir / "control.token"

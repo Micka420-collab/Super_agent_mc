@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from emeth.bridge.client import BodyClient
+from emeth.llm.base import FREE_ARGS_NOTE, free_args
 from emeth.llm.router import LLMRouter
 from emeth.llm.types import ChatRequest, Message
 from emeth.memory.context import render_blocks, render_inventory, render_sensory
@@ -30,9 +31,9 @@ SKILL_SCHEMA: dict[str, Any] = {
         "name": {"type": "string", "description": "snake_case skill name describing the reusable capability (e.g. mine_logs_nearby)."},
         "description": {"type": "string", "description": "One or two sentences: what the skill does, its args, when to use it."},
         "code": {"type": "string", "description": "Complete JavaScript source defining async function main(api, args)."},
-        "args": {"type": "object", "description": "Arguments to run it with now."},
+        "args_json": {"type": "string", "description": "Arguments to run it with now: " + FREE_ARGS_NOTE},
     },
-    "required": ["plan", "name", "description", "code", "args"],
+    "required": ["plan", "name", "description", "code", "args_json"],
 }
 
 SKILL_RULES = """Rules for skill code:
@@ -107,8 +108,7 @@ class SkillSynthesizer:
                 transcript.append(f"attempt {attempt}: empty code")
                 continue
             last_name = safe_skill_name(str(data.get("name") or last_name))
-            raw_args = data.get("args")
-            args: dict[str, Any] = raw_args if isinstance(raw_args, dict) else {}
+            args: dict[str, Any] = free_args(data)
             check = await self.body.check_skill(code)
             if not check.ok:
                 feedback = "Static check rejected the code:\n- " + "\n- ".join(check.problems) + "\nFix these problems and return the complete code again."
@@ -131,12 +131,11 @@ class SkillSynthesizer:
 
     async def _args_for(self, skill: Skill, goal: str, obs: Observation) -> dict[str, Any]:
         """Ask the fast tier to fill the args of a reusable skill for this goal (cheap, structured)."""
-        schema = {"type": "object", "properties": {"args": {"type": "object"}}, "required": ["args"]}
+        schema = {"type": "object", "properties": {"args_json": {"type": "string", "description": FREE_ARGS_NOTE}}, "required": ["args_json"]}
         prompt = f"Goal: {goal}\nSkill `{skill.name}`: {skill.description}\nCode:\n{skill.code[:3000]}\nInventory: {render_inventory(obs)}\nReturn the args object to call main(api, args) with."
         try:
             resp = await self.router.chat(ChatRequest(messages=[Message(role="user", content=prompt)], tier="fast", temperature=0.0, json_schema=schema, json_schema_name="skill_args", purpose="skill.args"))
-            args = (resp.json_data or {}).get("args")
-            return args if isinstance(args, dict) else {}
+            return free_args(resp.json_data or {})
         except Exception:  # noqa: BLE001
             return {}
 

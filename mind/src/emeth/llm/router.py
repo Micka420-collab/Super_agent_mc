@@ -127,6 +127,8 @@ class LLMRouter:
         log_path: Path | None = None,
         breaker_config: BreakerConfig | None = None,
         max_attempts: int = 3,
+        max_usd: float = 0.0,
+        spend_path: Path | None = None,
     ):
         self.providers: dict[str, Provider] = {p.id: p for p in providers}
         self.order = [p.id for p in providers]
@@ -137,6 +139,11 @@ class LLMRouter:
         self.log_path = log_path
         self.max_attempts = max_attempts
         self.last_provider: str | None = None
+        # hard spend cap on paid providers (those with an api_key_env); 0 = unlimited. The total survives restarts
+        # through spend_path, so a crash loop cannot re-spend the budget. Local providers stay usable past the cap.
+        self.max_usd = max_usd
+        self.spend_path = spend_path
+        self.spent_usd = self._load_spend()
 
     @classmethod
     def from_configs(cls, configs: list[ProviderConfig], **kwargs: Any) -> LLMRouter:
@@ -168,9 +175,40 @@ class LLMRouter:
             out.append(p)
         return out
 
+    def budget_exhausted(self) -> bool:
+        return self.max_usd > 0 and self.spent_usd >= self.max_usd
+
+    def _paid(self, provider: Provider) -> bool:
+        return provider.config.api_key_env is not None
+
+    def _load_spend(self) -> float:
+        if not self.spend_path or not self.spend_path.exists():
+            return 0.0
+        try:
+            return float(json.loads(self.spend_path.read_text(encoding="utf-8")).get("spent_usd", 0.0))
+        except (OSError, ValueError, AttributeError) as exc:
+            # unreadable ledger: refuse to guess low — treat the budget as spent until a human looks at it
+            log.warning("spend ledger unreadable (%s); paid providers disabled", exc)
+            return float("inf") if self.max_usd > 0 else 0.0
+
+    def _save_spend(self) -> None:
+        if not self.spend_path:
+            return
+        try:
+            self.spend_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.spend_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"spent_usd": round(self.spent_usd, 6), "max_usd": self.max_usd, "updated": time.time()}), encoding="utf-8")
+            tmp.replace(self.spend_path)
+        except OSError as exc:  # pragma: no cover
+            log.warning("spend ledger write failed: %s", exc)
+
     async def chat(self, request: ChatRequest) -> ChatResponse:
         need_vision = any(m.images for m in request.messages)
         cands = [p for p in self.candidates(request.tier, need_vision=need_vision) if self.breakers[p.id].allow()]
+        if self.budget_exhausted():
+            cands = [p for p in cands if not self._paid(p)]
+            if not cands:
+                raise LLMError(f"spend cap reached ({self.spent_usd:.4f} / {self.max_usd:.2f} USD); no local provider", retryable=False)
         if not cands:
             raise LLMError(f"no available provider for tier '{request.tier}' (all missing keys or circuit-open)", retryable=False)
         errors: list[str] = []
@@ -220,6 +258,9 @@ class LLMRouter:
             led.input_tokens += resp.usage.input_tokens
             led.output_tokens += resp.usage.output_tokens
             led.cost_usd += resp.cost_usd
+            if resp.cost_usd and self._paid(self.providers[pid]):
+                self.spent_usd += resp.cost_usd
+                self._save_spend()
         if self.log_path:
             entry = {
                 "ts": time.time(),
@@ -242,6 +283,9 @@ class LLMRouter:
                     fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
             except OSError as exc:  # pragma: no cover
                 log.debug("decision log write failed: %s", exc)
+
+    def budget(self) -> dict[str, Any]:
+        return {"spent_usd": round(self.spent_usd, 6), "max_usd": self.max_usd, "exhausted": self.budget_exhausted()}
 
     def health(self) -> dict[str, Any]:
         return {

@@ -78,3 +78,24 @@ def json_instruction(schema: dict[str, Any], name: str) -> str:
         f"Respond with ONLY a JSON object named `{name}` that validates against this JSON schema, no prose, no code fences:\n"
         + json.dumps(schema, ensure_ascii=False)
     )
+
+
+FREE_ARGS_NOTE = 'arguments as a JSON object written as a string, e.g. "{\\"name\\": \\"oak_planks\\", \\"count\\": 4}"'
+
+
+def free_args(data: dict[str, Any], key: str = "args") -> dict[str, Any]:
+    """Read a free-form arguments object from structured output.
+
+    Constrained decoding closes every object schema, so an object without declared properties can only come back
+    as `{}` (observed live: `craft({})` four times in a row). Schemas therefore also offer `<key>_json`, a string;
+    a non-empty object wins, then the string is parsed.
+    """
+    obj = data.get(key)
+    if isinstance(obj, dict) and obj:
+        return obj
+    raw = data.get(f"{key}_json")
+    if isinstance(raw, str) and raw.strip():
+        parsed = extract_json(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    return obj if isinstance(obj, dict) else {}

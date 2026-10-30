@@ -70,6 +70,8 @@ class OpenAICompatProvider(Provider):
         }
         if request.stop:
             body["stop"] = request.stop
+        if "openrouter.ai" in self.config.base_url:
+            body["usage"] = {"include": True}  # OpenRouter then reports the billed cost of the call
         if request.tools and self._tools_ok:
             body["tools"] = [{"type": "function", "function": {"name": t.name, "description": t.description, "parameters": t.parameters}} for t in request.tools]
             body["tool_choice"] = "required" if request.tool_choice == "required" else request.tool_choice
@@ -92,6 +94,10 @@ class OpenAICompatProvider(Provider):
             self._json_schema_ok = False
             body.pop("response_format", None)
             body["messages"] = to_openai(prompt_json_fallback(request))
+            resp = await self._client.post(f"{self.config.base_url.rstrip('/')}/chat/completions", json=body, headers=self._headers())
+            latency = (time.perf_counter() - t0) * 1000
+        if resp.status_code == 400 and "temperature" in body and "temperature" in resp.text.lower():
+            body.pop("temperature", None)  # e.g. Claude 5.5 models behind OpenRouter: default sampling only
             resp = await self._client.post(f"{self.config.base_url.rstrip('/')}/chat/completions", json=body, headers=self._headers())
             latency = (time.perf_counter() - t0) * 1000
         if resp.status_code == 400 and "tools" in body:
@@ -125,6 +131,9 @@ class OpenAICompatProvider(Provider):
             cached_tokens=details.get("cached_tokens", 0) or 0,
         )
         cost = (u.input_tokens * self.config.input_cost_per_m + u.output_tokens * self.config.output_cost_per_m) / 1_000_000
+        billed = usage.get("cost")
+        if isinstance(billed, (int, float)) and not isinstance(billed, bool) and billed >= 0:
+            cost = max(cost, float(billed))  # the provider's own bill wins over a stale price table
         return ChatResponse(
             text=text,
             tool_calls=tool_calls,
