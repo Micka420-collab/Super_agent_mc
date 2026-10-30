@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { Block } from 'prismarine-block';
 import type { Recipe } from 'prismarine-recipe';
 import { BodyError, ErrorCodes } from '../protocol.js';
-import { goToBlock } from '../motor/movement.js';
+import { ESCAPE_PROFILE, goToBlock } from '../motor/movement.js';
 import { findPlacementSpotNear, placeBlockAt } from '../motor/placing.js';
 import { countItem, findItem, inventorySummary, normalizeName, resolveItemNames } from '../motor/items.js';
 import { raceAbort, sleep, throwIfAborted, waitFor } from '../util/async.js';
@@ -120,8 +120,15 @@ export async function ensureCraftingTable(ctx: ActionContext, maxDistance = 32):
     }
   }
   if (!findItem(bot, 'crafting_table') && existing && !canMakeTable(bot)) {
-    // no way to make a new one: the old table is worth the long walk after all
-    await goToBlock(bot, existing.position, ctx.signal, 90_000);
+    // no way to make a new one: the old table is worth the long walk after all — and, walled in without a pickaxe,
+    // worth breaking the way out by hand (seen live: sealed behind its own cobblestone after the pickaxe wore out)
+    try {
+      await goToBlock(bot, existing.position, ctx.signal, 30_000);
+    } catch (err) {
+      if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+      ctx.progress('no way to the crafting table on foot: breaking through by hand');
+      await goToBlock(bot, existing.position, ctx.signal, 120_000, ESCAPE_PROFILE);
+    }
     return existing;
   }
   if (!findItem(bot, 'crafting_table')) {

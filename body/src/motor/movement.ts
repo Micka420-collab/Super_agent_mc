@@ -22,7 +22,12 @@ export interface MovementProfile {
   /** Blocks the bot must never break while pathing (player builds, ores it wants to mine itself, ...). */
   protectedBlocks: string[];
   scaffoldingBlocks: string[];
+  /** last resort when stuck without the tool: break tool-only blocks by hand (slow, they drop nothing) */
+  handDig?: boolean;
 }
+
+/** Walking out of a trap with bare hands: the only time a player punches stone. */
+export const ESCAPE_PROFILE: MovementProfile = { canDig: true, allowParkour: false, allowSprinting: false, allow1by1towers: true, canOpenDoors: false, protectedBlocks: [], scaffoldingBlocks: [], handDig: true };
 
 export const DEFAULT_PROFILE: MovementProfile = {
   canDig: true,
@@ -57,7 +62,7 @@ export function buildMovements(bot: Bot, profile: MovementProfile = DEFAULT_PROF
   // a player does not punch through stone: blocks that need a tool I do not carry are walls, not doors
   // (seen live: a worn-out pickaxe, then a path dug through stone by hand, 7 s a block, nothing dropping)
   const carried = new Set(bot.inventory.items().map((i) => i.type));
-  for (const def of Object.values(bot.registry.blocksByName) as Array<{ id: number; harvestTools?: Record<string, boolean> }>) {
+  if (!profile.handDig) for (const def of Object.values(bot.registry.blocksByName) as Array<{ id: number; harvestTools?: Record<string, boolean> }>) {
     const tools = def.harvestTools ? Object.keys(def.harvestTools).map(Number) : null;
     if (tools && tools.length && !tools.some((id) => carried.has(id))) m.blocksCantBreak.add(def.id);
   }
@@ -145,9 +150,9 @@ export async function goTo(
 }
 
 /** Stand next to (not inside) a block so it can be interacted with. */
-export async function goToBlock(bot: Bot, pos: Vec3Like, signal?: AbortSignal, timeoutMs = 60_000): Promise<void> {
+export async function goToBlock(bot: Bot, pos: Vec3Like, signal?: AbortSignal, timeoutMs = 60_000, profile: MovementProfile = DEFAULT_PROFILE): Promise<void> {
   if (distance(bot.entity.position, { x: pos.x + 0.5, y: pos.y, z: pos.z + 0.5 }) <= 3.2) return;
-  bot.pathfinder.setMovements(buildMovements(bot, DEFAULT_PROFILE));
+  bot.pathfinder.setMovements(buildMovements(bot, { ...profile, protectedBlocks: [...DEFAULT_PROFILE.protectedBlocks, ...profile.protectedBlocks] }));
   const goal = new goals.GoalGetToBlock(pos.x, pos.y, pos.z);
   try {
     await raceAbort(bot.pathfinder.goto(goal), signal, { timeoutMs, onCancel: () => bot.pathfinder.stop() });
