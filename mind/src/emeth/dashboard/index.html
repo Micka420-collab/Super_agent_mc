@@ -94,6 +94,10 @@
     <h2>Timeline</h2>
     <ul class="timeline" id="timeline"></ul>
   </section>
+  <section class="wide">
+    <h2>Carte des lieux connus <span class="muted" id="mapinfo"></span></h2>
+    <canvas id="map" height="320" style="width:100%;border-radius:6px;background:#0b0e13"></canvas>
+  </section>
   <section>
     <h2>Mémoire</h2>
     <div class="row"><input id="memq" placeholder="chercher dans sa mémoire (lieux, leçons, gens…)"><button id="memBtn" style="flex:0 0 auto">Chercher</button></div>
@@ -103,6 +107,7 @@
     <h2>Esprit (LLM)</h2>
     <div id="router"></div>
     <pre id="stats" class="muted"></pre>
+    <ul class="timeline" id="decisions" style="max-height:200px;margin-top:8px"></ul>
   </section>
 </main>
 <div class="toast" id="toast"></div>
@@ -169,10 +174,37 @@
         const fr = await call('render', { width: 96, height: 54 });
         $('retina').src = 'data:image/png;base64,' + fr.pngBase64; $('retdesc').textContent = fr.description;
       }
+      drawMap(await call('places', { radius: 160 }), st.self);
+      const dec = await call('decisions', { limit: 12 });
+      $('decisions').innerHTML = dec.slice().reverse().map(d => `<li><span class="k ${d.ok ? '' : 'death'}">${esc(d.purpose)}</span>${esc(d.provider)}${d.model ? '/' + esc(d.model) : ''} · ${d.latency_ms} ms · ${d.input_tokens ?? '?'}→${d.output_tokens ?? '?'} tok${d.cached_tokens ? ` (${d.cached_tokens} cache)` : ''}${d.cost_usd ? ` · $${d.cost_usd}` : ''}${d.error ? ` · <span class="k death">${esc(d.error)}</span>` : ''}</li>`).join('') || '<li class="muted">aucun appel LLM pour l’instant</li>';
     } catch (e) { $('conn').textContent = 'erreur : ' + e.message; }
     finally { setTimeout(tick, 2000); }
   }
   const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  const KIND_COLOR = { resource: '#5dd0a1', structure: '#e3b341', hazard: '#f0616d', water: '#5aa9ff', player: '#ffffff', place: '#c792ea', home: '#c792ea' };
+  function drawMap(places, self) {
+    const c = $('map'); const W = c.width = c.clientWidth * devicePixelRatio, H = c.height = 320 * devicePixelRatio;
+    const ctx = c.getContext('2d'); ctx.clearRect(0, 0, W, H);
+    const cx = places.center.x, cz = places.center.z; const R = 160; const scale = Math.min(W, H) / (2 * R);
+    const px = (x) => W / 2 + (x - cx) * scale, pz = (z) => H / 2 + (z - cz) * scale;
+    ctx.strokeStyle = '#1d232c'; ctx.lineWidth = 1;
+    const halfW = W / (2 * scale), halfH = H / (2 * scale);
+    for (let gx = Math.floor((cx - halfW) / 32) * 32; gx <= cx + halfW; gx += 32) { ctx.beginPath(); ctx.moveTo(px(gx), 0); ctx.lineTo(px(gx), H); ctx.stroke(); }
+    for (let gz = Math.floor((cz - halfH) / 32) * 32; gz <= cz + halfH; gz += 32) { ctx.beginPath(); ctx.moveTo(0, pz(gz)); ctx.lineTo(W, pz(gz)); ctx.stroke(); }
+    ctx.font = `${11 * devicePixelRatio}px ${getComputedStyle(document.body).fontFamily}`; ctx.textBaseline = 'middle';
+    const seen = new Set();
+    for (const n of places.nodes) {
+      const x = px(n.x), z = pz(n.z); const col = KIND_COLOR[n.kind] || '#8a94a3';
+      ctx.fillStyle = col; ctx.globalAlpha = n.kind === 'resource' ? 0.7 : 1; ctx.beginPath(); ctx.arc(x, z, (n.kind === 'player' || n.kind === 'place' ? 5 : 3) * devicePixelRatio, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+      const key = n.kind + ':' + n.label; const important = n.kind !== 'resource' && n.kind !== 'water';
+      if (important && !seen.has(key + Math.round(x / 40) + ':' + Math.round(z / 40))) { seen.add(key + Math.round(x / 40) + ':' + Math.round(z / 40)); ctx.fillStyle = '#d6dde6'; ctx.fillText(n.label, x + 7 * devicePixelRatio, z); }
+    }
+    // the agent, with its heading
+    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#5dd0a1'; ctx.lineWidth = 2 * devicePixelRatio; ctx.beginPath(); ctx.arc(W / 2, H / 2, 6 * devicePixelRatio, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#8a94a3'; ctx.fillText(`${Math.round(cx)}, ${Math.round(cz)} · ${places.center.dim} · N ↑ · case = 32 blocs`, 8 * devicePixelRatio, H - 12 * devicePixelRatio);
+    const st = places.stats || {}; $('mapinfo').textContent = `${places.nodes.length} repères à moins de 160 blocs · ${st.nodes ?? '?'} nœuds, ${st.regions ?? places.regions.length} régions au total`;
+  }
 
   $('tellBtn').onclick = async () => { const text = $('tell').value.trim(); if (!text) return; try { await call('tell', { text, source: $('source').value.trim() || 'mentor' }); $('tell').value = ''; toast('transmis — il y pensera à sa prochaine décision'); } catch (e) { toast(e.message, true); } };
   $('sayBtn').onclick = async () => { const text = $('tell').value.trim(); if (!text) return; try { await call('say', { text: text.slice(0, 240) }); $('tell').value = ''; toast('dit en jeu'); } catch (e) { toast(e.message, true); } };

@@ -136,6 +136,22 @@ class ControlAPI:
     async def m_skills(self) -> list[dict[str, Any]]:
         return [_jsonable(r) for r in self.mind.skills.records()]
 
+    async def m_places(self, radius: float = 160.0, limit: int = 400) -> dict[str, Any]:
+        """Known places around the agent for the dashboard's map: graph nodes within `radius` (x/z) plus regions."""
+        g = self.mind.graph
+        obs = self.mind.body.latest_observation
+        if obs is not None:
+            cx, cz, dim = obs.self_.position.x, obs.self_.position.z, obs.self_.dimension
+        else:
+            cx, cz, dim = 0.0, 0.0, "overworld"
+        radius = max(16.0, min(2000.0, float(radius)))
+        nodes: list[dict[str, Any]] = []
+        for n in g.nodes_of(None, dim):
+            if abs(n.x - cx) <= radius and abs(n.z - cz) <= radius:
+                nodes.append({"id": n.id, "kind": n.kind, "label": n.label, "x": round(n.x, 1), "y": round(n.y, 1), "z": round(n.z, 1), "count": n.count, "notes": n.notes[:80]})
+        nodes.sort(key=lambda n: abs(float(n["x"]) - cx) + abs(float(n["z"]) - cz))
+        return {"center": {"x": cx, "z": cz, "dim": dim}, "nodes": nodes[: max(1, min(2000, int(limit)))], "regions": g.region_summary()[:12], "stats": g.stats()}
+
     async def m_decisions(self, limit: int = 20) -> list[dict[str, Any]]:
         """Tail of the LLM call log (provider, purpose, latency, tokens, cost) — what thinking costs."""
         limit = max(1, min(200, int(limit)))

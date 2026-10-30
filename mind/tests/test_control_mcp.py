@@ -210,3 +210,16 @@ async def test_dashboard_and_health_are_served_on_the_control_port(mind_and_worl
     log.write_text('{"ts": 1, "provider": "brain", "purpose": "decision", "cost_usd": 0.001}\nnot json\n{"ts": 2, "provider": "brain", "purpose": "critic", "cost_usd": 0.0}\n')
     rows = await ControlAPI(mind).dispatch("decisions", {"limit": 5})
     assert [r["purpose"] for r in rows] == ["decision", "critic"]
+
+
+async def test_places_for_the_map_follow_the_agent(mind_and_world):
+    mind, world = mind_and_world
+    await mind.body.observe("compact")  # latest_observation → center
+    mind.graph.observe(mind.body.latest_observation)  # type: ignore[arg-type]
+    mind.graph.mark_place("home", 12, 64, -40)
+    far = mind.graph.mark_place("far outpost", 900, 64, 900)
+    places = await ControlAPI(mind).dispatch("places", {"radius": 160})
+    labels = [n["label"] for n in places["nodes"]]
+    assert "home" in labels and "far outpost" not in labels and far
+    assert places["center"]["dim"] == "overworld" and places["stats"]["nodes"] >= 1
+    assert places["nodes"][0]["label"] in labels  # sorted nearest-first, all serialisable
