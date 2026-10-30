@@ -155,3 +155,5 @@ def test_dawn_reads_as_the_end_of_the_night_and_ends_waits():
     obs.world.timeOfDay = 23500
     assert "the night is over" in render_sensory(obs)
     assert "daybreak".startswith(WAIT_BREAKERS) and "nightfall".startswith(WAIT_BREAKERS)
+    # advice from the owner (plugin, dashboard, MCP) promises to wake the next thought: a wait must not swallow it
+    assert "mentor:plugin".startswith(WAIT_BREAKERS) and "player joined: Micka".startswith(WAIT_BREAKERS)

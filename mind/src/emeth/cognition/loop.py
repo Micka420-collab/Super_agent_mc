@@ -55,7 +55,7 @@ from emeth.social.persona import Persona
 log = logging.getLogger(__name__)
 
 AUDIENCE_MEMORY_S = 300.0
-WAIT_BREAKERS = ("chat", "whisper", "hurt", "death", "threat", "daybreak", "nightfall")
+WAIT_BREAKERS = ("chat", "whisper", "hurt", "death", "threat", "daybreak", "nightfall", "mentor", "player joined")
 
 COORD_HINT = re.compile(r"-?\d{1,5}\s*[, ]\s*-?\d{1,3}\s*[, ]\s*-?\d{1,5}")
 
