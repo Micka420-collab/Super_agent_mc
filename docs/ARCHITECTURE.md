@@ -1,6 +1,6 @@
 # Architecture
 
-EMETH est découpé en deux processus qui se parlent par WebSocket : le **corps** (ce qui touche le jeu) et l'**esprit**
+EMETH est découpé en deux processus qui se parlent par WebSocket, plus un plugin Paper facultatif pour les joueurs : le **corps** (ce qui touche le jeu) et l'**esprit**
 (ce qui pense). On peut relancer l'un sans l'autre, les faire tourner sur deux machines, ou brancher plusieurs
 observateurs (dashboard) sur un corps.
 
@@ -204,15 +204,40 @@ une raison, `say` passe par le corps comme toute parole. `emeth mcp` traduit ce 
 dans le paquet, `/healthz`) : il ouvre le WebSocket avec le jeton et interroge `status/goals/timeline/render` toutes
 les 2 s ; la boîte « mentor » appelle `tell`/`say`/`set_goal`.
 
-## 3. Protocole & tests croisés
+## 3. Plugin compagnon — `plugin/` (Java 21, Paper 1.21.11, ADR-0007)
+Une interface **dans le jeu** pour les joueurs humains, faite uniquement d'éléments vanilla : rien à installer côté client.
+Le plugin est un client du **canal de contrôle de l'esprit**, jamais du corps.
+
+```
+EmethCompanion ─┬─ MindLink (mind/)        interroge status + timeline hors du thread serveur, en ligne / hors ligne, attente exponentielle
+                │   └─ MindClient          JSON-RPC sur WebSocket (client du JDK), une connexion persistante, délai par appel, jeton caviardé
+                ├─ Hologram (ui/)          text_display passager de l'agent, caché à l'agent (Player#hideEntity)
+                ├─ Hud                     barre de boss (but, échelle), barre d'action (vitals, danger), tableau latéral (humeur, pulsions, pensée)
+                ├─ MenuModel → MindMenu    inventaire 6 rangées « dans la tête », rafraîchi à chaque lecture, clics routés par MenuListener
+                ├─ Monitors + RetinaImage  cartes 128×128 (ou mur 2×1) peintes avec la rétine, légendes à la police des cartes
+                ├─ Mentor                  conseils et buts depuis le chat ou les commandes → tell / set_goal, délai par mentor
+                └─ Announcer               jalons et morts aux suiveurs ; « tourne en rond » → ligne cliquable pour les mentors
+```
+- Tous les rendus (carte flottante, HUD, modèle du menu, tuiles de rétine, livres) sont des fonctions pures testées
+  contre `protocol/fixtures/control/*.json`, que génère l'esprit (`mind/scripts/gen_control_fixtures.py`). Un test Python
+  vérifie que le `status` vivant garde toutes les clés de la fixture.
+- `plugin/e2e/live_companion.py` lance Paper 1.21.11, le plugin, le corps, l'esprit (cerveau scripté) et un second client
+  Mineflayer (`observer.mjs`) qui joue l'humain : 28 vérifications, du jeton jamais journalisé aux pixels de la carte, en
+  passant par l'invisibilité de la carte flottante pour l'agent.
+
+## 4. Protocole & tests croisés
 `protocol/fixtures/*.json` est généré par le corps (`npx tsx src/tools/gen-fixtures.ts`) à partir d'un bot simulé et
 validé par les tests Python : toute dérive de schéma casse une suite ou l'autre.
 
-## 4. Sécurité
+## 5. Sécurité
 - Le corps ne lance jamais de commande (`/`) depuis le chat ; `sanitizeChat` retire les slashs.
 - Les réflexes n'attaquent jamais un joueur ; `allies` configurable.
 - Bridge protégé par token ; un seul driver. Canal de contrôle sur localhost, jeton obligatoire (fichier 0600),
-  et aucune méthode qui commande le corps directement : l'extérieur conseille, l'agent décide.
+  et aucune méthode qui commande le corps directement : l'extérieur conseille, l'agent décide. Un client qui part au
+  milieu d'un appel ne produit pas d'erreur côté esprit.
+- Plugin compagnon : refuse un esprit non local sauf `mind.allow-remote`, jeton jamais journalisé, permissions
+  `emeth.use / mentor / monitor / admin`, saisies nettoyées et bornées, délai entre deux conseils, carte flottante cachée à
+  l'agent, et aucune action sur le bot (ni objet, ni téléportation, ni soin).
 - Skills : trois couches (analyse, worker, vm) + `resourceLimits` + budget temps dur.
 - Pas de triche serveur (pas de `/tp`, `/give`, pas de keepInventory requis).
 - La persona a des règles cœur non modifiables par le chat ; l'esprit traite le chat comme des données.

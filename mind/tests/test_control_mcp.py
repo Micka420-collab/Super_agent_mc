@@ -223,3 +223,63 @@ async def test_places_for_the_map_follow_the_agent(mind_and_world):
     assert "home" in labels and "far outpost" not in labels and far
     assert places["center"]["dim"] == "overworld" and places["stats"]["nodes"] >= 1
     assert places["nodes"][0]["label"] in labels  # sorted nearest-first, all serialisable
+
+
+CONTROL_FIXTURES = Path(__file__).resolve().parents[2] / "protocol" / "fixtures" / "control"
+
+
+def _shape(value: Any, prefix: str = "") -> set[str]:
+    """Every dict key path in a JSON value (lists and nulls are leaves): what a client may rely on."""
+    keys: set[str] = set()
+    if isinstance(value, dict):
+        for k, v in value.items():
+            path = f"{prefix}.{k}" if prefix else k
+            keys.add(path)
+            if k not in ("router", "minecraft", "drives"):  # provider names, body-reported fields, drive names vary
+                keys |= _shape(v, path)
+    return keys
+
+
+async def test_status_keeps_the_shape_the_companion_plugin_reads(mind_and_world):
+    """The Paper plugin parses protocol/fixtures/control/status.json in its own tests; a live status must still carry
+    every key path of that fixture (regenerate with `python scripts/gen_control_fixtures.py` after a deliberate change)."""
+    mind, _world = mind_and_world
+    assert mind.loop is not None
+    await mind.body.observe("compact")
+    await mind.loop.think("startup")
+    api = ControlAPI(mind)
+    live = await api.dispatch("status", {})
+    fixture = json.loads((CONTROL_FIXTURES / "status.json").read_text(encoding="utf-8"))
+    missing = _shape(fixture) - _shape(live)
+    assert not missing, f"status lost keys the plugin reads: {sorted(missing)}"
+    assert live["body"]["username"] == "Emeth"
+    assert live["thought"]["reason"] == "greet" and live["thought"]["speech"] == "Salut Steve !"
+    assert live["threat"]["recommendation"] in ("calm", "watch", "fight", "retreat", "flee")
+    assert live["task"] and live["nearby"]["players"] == ["Steve"]
+    for name in ("goals", "timeline", "render"):
+        assert (CONTROL_FIXTURES / f"{name}.json").exists()
+
+
+async def test_a_client_leaving_mid_call_is_not_an_error(mind_and_world, caplog, monkeypatch):
+    """A plugin reloading or a dashboard tab closing while a call is in flight must not produce error logs."""
+    import logging
+
+    import websockets
+
+    mind, _world = mind_and_world
+    assert mind.control is not None
+    api = mind.control.api
+    original = api.dispatch
+
+    async def slow_dispatch(method: str, params: dict[str, Any] | None) -> Any:
+        await asyncio.sleep(0.3)
+        return await original(method, params)
+
+    monkeypatch.setattr(api, "dispatch", slow_dispatch)
+    caplog.set_level(logging.DEBUG, logger="emeth.control")
+    async with websockets.connect(f"{mind.control.url}?token=t0k3n") as ws:
+        await ws.send(json.dumps({"id": "1", "method": "status", "params": {}}))
+    await asyncio.sleep(0.6)
+    errors = [r for r in caplog.records if r.levelno >= logging.WARNING and r.name.startswith("emeth.control")]
+    assert not errors, [r.getMessage() for r in errors]
+    assert any("left before its answer" in r.getMessage() for r in caplog.records)

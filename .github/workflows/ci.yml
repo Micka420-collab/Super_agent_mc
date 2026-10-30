@@ -45,3 +45,62 @@ jobs:
       - run: ruff check src tests
       - run: mypy src/emeth
       - run: pytest
+
+  plugin:
+    name: plugin (Paper, Java 21)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: build (compile with -Werror, JUnit against the shared control fixtures)
+        run: ./gradlew build --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emeth-companion
+          path: plugin/build/libs/*.jar
+
+  companion-e2e:
+    name: plugin end-to-end (Paper + body + mind + a second client)
+    needs: [body, mind, plugin]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: body/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: cache the Paper jar and Mojang's server files
+        uses: actions/cache@v4
+        with:
+          path: |
+            plugin/e2e/.cache/paper-1.21.11-132.jar
+            plugin/e2e/.cache/server/cache
+            plugin/e2e/.cache/server/libraries
+            plugin/e2e/.cache/server/versions
+          key: paper-1.21.11-132
+      - run: npm ci
+        working-directory: body
+      - run: pip install -e ".[dev]"
+        working-directory: mind
+      - run: ./gradlew build --no-daemon -x test
+        working-directory: plugin
+      - name: live companion e2e
+        working-directory: mind
+        run: python ../plugin/e2e/live_companion.py

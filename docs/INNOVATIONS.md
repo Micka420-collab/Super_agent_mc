@@ -115,6 +115,16 @@ la température. Testé en boucle complète : au troisième `mine diamond_ore` r
 change de plan. Au passage, les jalons « lit » et `custom` (abri, ferme, portail) sont enfin posables : le sommeil pose
 `slept`, le critic pose `custom:*` — avant, l'échelle les reproposait sans fin.
 
+### 27. Une fenêtre dans sa tête, dans le jeu, sans mod
+Le plugin Paper (`plugin/`) donne aux joueurs ce qu'AgentCraft donne en solo avec un mod client : voir l'agent travailler
+et lui répondre. Mais en multijoueur, pour n'importe quel client vanilla. Une carte flottante au-dessus de lui dit ce
+qu'il fait, ce qu'il vient de penser et le rapport de force. Un HUD montre son but, ses pulsions et ses pensées. Un menu
+« dans sa tête » se rafraîchit en direct, et une carte affiche ce que voient ses yeux. Quand il tourne en rond, les
+mentors reçoivent une ligne cliquable pour lui souffler une autre approche : c'est l'agent qui vient vous chercher.
+Deux règles le distinguent d'une manette. Le plugin ne parle qu'à l'esprit et ne touche jamais au corps. Et la carte
+flottante est cachée à l'agent lui-même, dont la perception reste honnête. Vérifié de bout en bout sur Paper avec un
+second client qui joue l'humain.
+
 ## Conçu, à coder ensuite (voir ROADMAP)
 
 ### 13. Sandbox d'imagination (jumeau du monde)

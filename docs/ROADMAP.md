@@ -24,6 +24,8 @@ docs, CI.
 ## M3 — Présence
 - [x] Façade MCP de l'esprit (`emeth mcp`, ADR-0006) : status/observe/look/memory_search/timeline/goals/skills + tell (mentor)/suggest_goal/say, sur un canal de contrôle local réutilisable par le tableau de bord — validée en direct (30 oct. 2026).
 - [x] Tableau de bord « dans la tête » servi par le canal de contrôle (`http://127.0.0.1:8766/?token=…`) : corps, pulsions, rétine en direct, buts, timeline, mémoire, coûts LLM, et la boîte « mentor » — une page, zéro build (30 oct. 2026). Reste : graphe de monde et journal des décisions détaillé.
+- [x] Plugin compagnon Paper (`plugin/`, ADR-0007) : carte flottante au-dessus de l'agent (invisible pour lui), barre de boss, barre d'action, tableau latéral, menu « dans la tête », livres objectifs/journal, moniteur rétine sur cartes, conseils et buts depuis le chat, alerte « tourne en rond » cliquable — 33 tests JUnit + 28 vérifications de bout en bout sur Paper 1.21.11 avec un second client (30 oct. 2026).
+- [ ] Pack de ressources du plugin (fond de menu, icônes, police) pour une interface sur mesure façon AgentCraft, sans mod client.
 - [ ] Boucle vocale : plugin Simple Voice Chat → WS → Whisper → esprit → TTS → `createAudioSender`.
 - [ ] Récap vidéo quotidien (HyperFrames) depuis la timeline + frames de rétine.
 

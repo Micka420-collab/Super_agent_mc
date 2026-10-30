@@ -1,0 +1,76 @@
+{
+  "goals": [
+    {
+      "created_at": 1700000000.0,
+      "priority": 6,
+      "source": "curriculum",
+      "status": "active",
+      "tasks": [
+        {
+          "attempts": 1,
+          "created_at": 1700000000.0,
+          "description": "Punch a tree and collect 6 logs",
+          "kind": "gather",
+          "last_error": "Task not complete: best progress: 0/6 oak_log. Check the inventory delta in the result and gather what is missing before retrying.",
+          "max_attempts": 4,
+          "source": "curriculum:wood",
+          "status": "active",
+          "success": {
+            "inventory_any": [
+              [
+                "oak_log",
+                6
+              ],
+              [
+                "birch_log",
+                6
+              ],
+              [
+                "spruce_log",
+                6
+              ],
+              [
+                "jungle_log",
+                6
+              ],
+              [
+                "acacia_log",
+                6
+              ],
+              [
+                "dark_oak_log",
+                6
+              ],
+              [
+                "mangrove_log",
+                6
+              ],
+              [
+                "cherry_log",
+                6
+              ],
+              [
+                "any_log",
+                6
+              ]
+            ]
+          }
+        }
+      ],
+      "title": "Survival ladder: Punch a tree and collect 6 logs",
+      "why": "progress through the basics of survival"
+    }
+  ],
+  "progress": {
+    "done": [
+      "planks",
+      "table"
+    ],
+    "goals": [
+      "Survival ladder: Punch a tree and collect 6 logs"
+    ],
+    "next": "wood",
+    "total": 21
+  },
+  "text": "Curriculum: 2/21 milestones, next: Punch a tree and collect 6 logs\nGoal (p6, curriculum): Survival ladder: Punch a tree and collect 6 logs → current task: Punch a tree and collect 6 logs (attempt 2/4, last error: Task not complete: best progress: 0/6 oak_log. Check the inventory delta in the result and gather what is missing before retrying.)"
+}

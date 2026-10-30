@@ -1,0 +1,39 @@
+# EMETH Companion — configuration.
+# Le plugin lit l'esprit d'EMETH par son canal de contrôle local (celui du tableau de bord et de `emeth mcp`).
+# Il ne commande jamais le corps : il montre, et il transmet des conseils que l'agent pèse librement.
+
+language: fr                      # fr | en
+
+mind:
+  url: "ws://127.0.0.1:8766"      # canal de contrôle de l'esprit (emeth run)
+  token: ""                       # vide → variable EMETH_CONTROL_TOKEN, puis token-file
+  token-file: "../mind/data/control.token"   # relatif au dossier du serveur
+  allow-remote: false             # le canal est en clair : refuser tout hôte non local sauf choix explicite
+  poll-seconds: 2
+  timeout-seconds: 10
+
+bot:
+  username: ""                    # vide → le pseudo annoncé par l'esprit
+
+hologram:
+  enabled: true                   # carte flottante au-dessus de l'agent (invisible pour l'agent lui-même)
+  thought-seconds: 12             # durée d'affichage d'une nouvelle pensée
+  height: 0.45
+
+hud:
+  default-on-join: false          # chaque joueur active/masque avec /emeth hud (mémorisé sur le joueur)
+  bossbar: true
+  actionbar: true
+  sidebar: true
+
+monitor:
+  refresh-seconds: 3              # fréquence de la rétine sur les cartes-moniteurs
+
+announce:
+  kinds: [achievement, death]     # lignes de la timeline annoncées dans le chat
+  audience: followers             # followers (HUD activé) | all
+  stuck-alert: true               # quand l'agent tourne en rond, proposer aux mentors de le conseiller
+
+mentor:
+  cooldown-seconds: 5             # chaque conseil réveille une pensée (et coûte des jetons)
+  max-length: 600
