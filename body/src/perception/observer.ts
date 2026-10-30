@@ -21,6 +21,7 @@ import type {
 } from '../protocol.js';
 import { bearingTo, distance, relativeDirection, round, roundVec } from '../util/geometry.js';
 import { classifyEntity } from './entities.js';
+import { assessThreat } from '../motor/threat.js';
 import { scanFov, type FovScanOptions, type FovScanResult, type RayHit, type Raycaster } from './fov.js';
 
 export interface ObserverOptions {
@@ -180,14 +181,26 @@ export class Observer {
     const scan = scanFov(eye, bot.entity.yaw, bot.entity.pitch, this.raycast, scanOpts);
     this.lastScan = scan;
 
+    const self = this.selfState();
+    const world = this.worldState();
+    const entities = this.entitiesState(detail);
+    entities.threat = assessThreat({
+      hostiles: entities.hostiles.map((h) => ({ name: h.name, distance: h.distance, visible: h.visible })),
+      health: self.health,
+      armor: self.armor,
+      heldItem: self.heldItem?.name ?? null,
+      offhandItem: self.offhandItem?.name ?? null,
+      phase: world.phase,
+      skyLight: world.skyLight,
+    });
     const observation: Observation = {
       ts: Date.now(),
       tick: this.tick,
       detail,
-      self: this.selfState(),
-      world: this.worldState(),
+      self,
+      world,
       inventory: this.inventoryState(),
-      entities: this.entitiesState(detail),
+      entities,
       blocks: this.blocksState(scan, detail),
       vision: {
         visible: scan.visible.slice(0, detail === 'full' ? 400 : 80),

@@ -156,6 +156,37 @@ describe('body e2e (flying-squid)', () => {
     expect(bot.blockAt(new Vec3(below.x, below.y, below.z))?.name).toBe('air');
   });
 
+  it('digs a surveyed staircase down and a tunnel at the bottom, reporting where it stopped', async () => {
+    const bot = runtime!.bot;
+    const Item = createRequire(import.meta.url)('prismarine-item')(bot.registry) as new (id: number, count: number) => unknown;
+    await bot.creative.setInventorySlot(37, new Item(bot.registry.itemsByName['diamond_pickaxe']!.id, 1) as never);
+    await new Promise((r) => setTimeout(r, 200));
+    const start = bot.entity.position.floored();
+    const info = await runtime!.runner.run({ action: 'ore_info', args: { name: 'diamond' } });
+    expect(info.ok, JSON.stringify(info)).toBe(true);
+    expect((info.result as { advice: { move: string } }).advice.move).toBe('descend');
+
+    const down = await runtime!.runner.run({ action: 'descend', args: { toY: start.y - 3, direction: 'west', torchEvery: 32, maxSteps: 3 } });
+    expect(down.ok, JSON.stringify(down)).toBe(true);
+    const d = down.result as { steps: number; reachedTarget: boolean; end: { x: number; y: number; z: number }; stoppedBecause: string; direction: string };
+    expect(d.direction).toBe('west');
+    expect(d.steps).toBe(3);
+    expect(d.reachedTarget).toBe(true);
+    expect(bot.entity.position.floored().y).toBe(start.y - 3);
+    // the staircase really exists: each step's feet cell is open
+    for (let i = 1; i <= 3; i++) expect(bot.blockAt(new Vec3(start.x - i, start.y - i, start.z))?.name).toBe('air');
+
+    const along = await runtime!.runner.run({ action: 'tunnel', args: { length: 3, direction: 'west', torchEvery: 32 } });
+    expect(along.ok, JSON.stringify(along)).toBe(true);
+    const t = along.result as { steps: number; end: { x: number; y: number; z: number }; stoppedBecause: string };
+    expect(t.steps).toBe(3);
+    expect(t.end.x).toBe(d.end.x - 3);
+    expect(bot.blockAt(new Vec3(t.end.x, t.end.y + 1, t.end.z))?.name).toBe('air');
+    // walk back up to the surface for the rest of the suite
+    const back = await runtime!.runner.run({ action: 'goto', args: { x: start.x + 0.5, y: start.y, z: start.z + 0.5, range: 1, timeoutMs: 30_000 } });
+    expect(back.ok, JSON.stringify(back)).toBe(true);
+  });
+
   it('places blocks and builds a small wall from creative inventory', async () => {
     const bot = runtime!.bot;
     const Item = createRequire(import.meta.url)('prismarine-item')(bot.registry) as new (id: number, count: number) => unknown;

@@ -1,8 +1,8 @@
 """Context assembly — turns the agent's state into the blocks the decision model reads.
 
 Layout (static system prompt + volatile user message, for prompt caching):
-  [IDENTITY] [DRIVES] [SENSORY] [BODY] [LAST ACTION] [GOALS] [PREVIOUSLY] [ABOUT PLAYERS]
-  [PLACES] [MEMORIES] [TIMELINE] [DECISION]
+  [IDENTITY] [DRIVES] [SENSORY] [AROUND ME] [BLOCKS] [INVENTORY] [BODY] [LAST ACTION] [GOALS] [PREVIOUSLY]
+  [ABOUT PLAYERS] [PLACES I KNOW] [RELEVANT MEMORIES] [TIMELINE] ([MENTOR]) ([REFLECTION]) [DECISION]
 Each block has a character budget so the whole message stays bounded whatever the world does.
 """
 
@@ -96,6 +96,9 @@ def render_entities(obs: Observation, max_each: int = 6) -> str:
         lines.append("Players: " + "; ".join(f"{p.username or p.name} {p.distance:.0f}m {p.relative}" + (f" holding {p.heldItem}" if p.heldItem else "") + ("" if p.visible else " (not in sight)") for p in e.players[:max_each]))
     if e.hostiles:
         lines.append("THREATS: " + "; ".join(f"{h.name} {h.distance:.0f}m {h.relative}" + (f" HP {h.health:.0f}" if h.health is not None else "") for h in e.hostiles[:max_each]))
+        t = e.threat
+        if t is not None and t.recommendation != "calm":
+            lines.append(f"Odds: danger {t.danger:.0%} → {t.recommendation}" + (f" ({', '.join(t.reasons[:4])})" if t.reasons else ""))
     if e.passives:
         groups: dict[str, int] = {}
         nearest: dict[str, float] = {}

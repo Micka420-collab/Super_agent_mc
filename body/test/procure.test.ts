@@ -38,6 +38,8 @@ interface World {
   furnaceNearby: boolean;
   /** hook: terrain revealed by exploring */
   onExplore?: (w: World) => void;
+  /** hook: what a staircase / tunnel exposes (called with the depth reached) */
+  onDig?: (w: World, kind: 'descend' | 'tunnel', y: number) => void;
   /** per block name: what actually drops (overrides loot tables; empty object = nothing) */
   dropOverride?: Record<string, Record<string, number>>;
 }
@@ -176,6 +178,18 @@ class Sim {
         this.world.onExplore?.(this.world);
         return { found: null, travelled: 20 };
       }
+      case 'descend': {
+        const toY = Number(args['toY']);
+        const from = this.bot.entity.position.y;
+        this.bot.entity.position = new Vec3(0, toY, from - toY);
+        this.world.onDig?.(this.world, 'descend', toY);
+        return { kind: 'stair', steps: from - toY, end: { x: 0, y: toY, z: from - toY }, reachedTarget: true, oresSeen: {}, stoppedBecause: `reached Y ${toY}` };
+      }
+      case 'tunnel': {
+        const y = this.bot.entity.position.y;
+        this.world.onDig?.(this.world, 'tunnel', y);
+        return { kind: 'tunnel', steps: Number(args['length']), end: { x: Number(args['length']), y, z: 0 }, oresSeen: { coal_ore: 2 }, stoppedBecause: 'tunnel complete' };
+      }
       case 'attack': {
         const id = Number(args['id']);
         const idx = this.world.entities.findIndex((e) => e.id === id);
@@ -270,6 +284,41 @@ describe('get: plan → act → re-plan loop', () => {
     expect(res.done).toBe(true);
     expect(res.executed[0]).toMatch(/explored/);
     expect(res.executed[1]).toMatch(/mined 1 oak_log/);
+  });
+
+  it('digs down to diamond depth and branch-mines instead of exploring the surface', async () => {
+    const world = forest();
+    world.blocks['cobblestone'] = 0;
+    world.onDig = (w, kind, y) => {
+      // diamonds only show up in the walls of a tunnel dug at the right depth
+      if (kind === 'tunnel' && y <= -50) w.blocks['deepslate_diamond_ore'] = 3;
+    };
+    const sim = new Sim({ ...world, tableNearby: true }, { iron_pickaxe: 1 });
+    const res = await runGet(sim.ctx, { name: 'diamond', count: 3, maxSteps: 10 }, sim.deps);
+    expect(res.done).toBe(true);
+    expect(sim.calls.some((c) => c.startsWith('explore'))).toBe(false);
+    const digs = sim.calls.filter((c) => !c.startsWith('mine'));
+    expect(digs[0]).toMatch(/^descend \{"toY":-58/);
+    expect(digs[1]).toMatch(/^tunnel /);
+    expect(res.executed[0]).toMatch(/descended to Y -58 for diamond/);
+    expect(res.executed[1]).toMatch(/tunnelled 24 blocks .*saw 2 coal_ore/);
+    expect(res.executed[2]).toMatch(/mined 3 diamond/);
+  });
+
+  it('stops digging for an ore after the search budget, and refuses ores of another dimension', async () => {
+    const sim = new Sim({ ...forest(), tableNearby: true }, { iron_pickaxe: 1 });
+    await expect(runGet(sim.ctx, { name: 'diamond', count: 1, maxSteps: 10 }, sim.deps)).rejects.toMatchObject({
+      code: ErrorCodes.MISSING_ITEM,
+      message: expect.stringContaining('even after digging'),
+    });
+    expect(sim.calls.filter((c) => c.startsWith('descend')).length).toBe(1);
+    expect(sim.calls.filter((c) => c.startsWith('tunnel')).length).toBe(2);
+    const nether = new Sim({ ...forest(), tableNearby: true }, { diamond_pickaxe: 1 });
+    await expect(runGet(nether.ctx, { name: 'netherite_scrap', count: 1, maxSteps: 10 }, nether.deps)).rejects.toMatchObject({
+      code: ErrorCodes.MISSING_ITEM,
+      message: expect.stringContaining('only generates in the nether'),
+    });
+    expect(nether.calls.some((c) => c.startsWith('descend'))).toBe(false);
   });
 
   it('blocks on hunting when no suitable mob is around, and hunts when one is', async () => {

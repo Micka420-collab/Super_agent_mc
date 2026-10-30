@@ -14,4 +14,6 @@ Un skill est un fichier JavaScript `async function main(api, args)` avec un en-t
 
 Règles : pas de `require/import/process/eval`, boucles bornées, vérifier l'état avant/après, erreurs explicites avec
 `code` (`MISSING_ITEM`, `NOT_FOUND`…), paramètres via `args` pour rester réutilisable. Pour obtenir un objet, préférer
-`api.plan_get` / `api.get` (planificateur déterministe) à une séquence manuelle de `mine`/`craft`.
+`api.plan_get` / `api.get` (planificateur déterministe) à une séquence manuelle de `mine`/`craft`. Pour creuser vers une
+profondeur, `api.descend` / `api.tunnel` (relevé de sécurité intégré) remplacent avantageusement un escalier codé à la main
+(`safe_staircase_mine` reste comme exemple de skill seed).

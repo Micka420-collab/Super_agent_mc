@@ -36,12 +36,13 @@ from emeth.cognition.decide import (
 from emeth.cognition.drives import Drives
 from emeth.cognition.instinct import InstinctContext, instinct
 from emeth.cognition.planner import Planner, Task
+from emeth.cognition.reflection import Reflection, signature_of
 from emeth.cognition.skills import SkillOutcome, SkillSynthesizer
 from emeth.config import LoopConfig
 from emeth.llm.router import LLMRouter
 from emeth.llm.types import LLMError
 from emeth.memory.consolidation import Consolidator
-from emeth.memory.context import ContextBlocks, observation_blocks, render_action_result
+from emeth.memory.context import ContextBlocks, minutes_to, observation_blocks, render_action_result
 from emeth.memory.episodic import Timeline
 from emeth.memory.semantic import Wiki
 from emeth.memory.social import SocialMemory
@@ -122,6 +123,9 @@ class CognitiveLoop:
         self._last_decision_at: float = 0.0
         self._consecutive_bad_decisions = 0
         self._wait_until: float = 0.0
+        # metacognition: notices repeated failures and rejected thoughts, writes [REFLECTION]
+        self.reflection = Reflection()
+        self._action_sig: str = ""
         # words from outside the game (the owner through the MCP façade / dashboard), consumed by the next thought
         self._mentor_inbox: list[tuple[str, str]] = []
 
@@ -288,6 +292,8 @@ class CognitiveLoop:
         if kind == "sleep":
             self.timeline.add("sleep", f"fell asleep on day {p.get('day')}")
             self.drives.on_event("sleep")
+            self.planner.mark_slept()
+            self._mark_home()
             asyncio.create_task(self._dream(int(p.get("day") or 0)))
             return None, 0
         if kind == "wake":
@@ -334,6 +340,35 @@ class CognitiveLoop:
             self.drives.on_event("discovery")
             return f"{who} is building nearby", 5000
         return None, 0
+
+    def _mark_home(self) -> None:
+        """Where I sleep is home: the place the mind steers back to before dark."""
+        obs = self.body.latest_observation
+        if obs is None:
+            return
+        pos = obs.self_.position
+        self.graph.mark_place("home", pos.x, pos.y, pos.z, kind="place", dim=obs.self_.dimension, notes="my bed — where I sleep")
+        self.timeline.add("note", f"home is where I sleep: ({pos.x:.0f}, {pos.y:.0f}, {pos.z:.0f})", importance=0.5)
+
+    def home_advice(self, obs: Observation) -> str:
+        """A player keeps an eye on the clock and the distance to their bed."""
+        rows = self.graph.nearest(obs.self_.position.x, obs.self_.position.y, obs.self_.position.z, kind="place", label="home", dim=obs.self_.dimension, limit=1)
+        if not rows:
+            return ""
+        node, dist = rows[0]
+        walk_min = max(1, round(dist / 4.3 / 60 + 0.5))  # ~4.3 blocks/s walking
+        where = f"Home is at ({node.x:.0f}, {node.y:.0f}, {node.z:.0f}), {dist:.0f} blocks away (~{walk_min} min walk)."
+        w = obs.world
+        if w.phase == "day":
+            left = minutes_to(w.timeOfDay, 12000)
+            if dist > 24 and walk_min + 1 >= left:
+                return f"{where} Dusk in ~{left} min: head back now or you will be out in the dark."
+            return where if dist > 24 else ""
+        if w.phase == "dusk":
+            return f"{where} Night is coming: go home or raise a shelter here." if dist > 16 else where
+        if w.phase == "night" and dist > 32 and not obs.self_.isSleeping:
+            return f"{where} It is night and you are far from your bed: shelter where you are (or dig in) rather than crossing the dark."
+        return ""
 
     async def _respawn_later(self) -> None:
         await asyncio.sleep(3)
@@ -449,6 +484,9 @@ class CognitiveLoop:
         mentor = self._mentor_block()
         if mentor:
             blocks.extra["MENTOR"] = mentor
+        reflection = self.reflection.render(self.planner.current_task())
+        if reflection:
+            blocks.extra["REFLECTION"] = reflection
         blocks.decision = self._decision_block(obs)
         return blocks.render()
 
@@ -471,6 +509,12 @@ class CognitiveLoop:
             parts.append(f"Current task: {task.description}. Prefer `skill` with this task as the goal when it needs several steps, or a direct primitive when one step suffices.")
         if obs.world.phase in ("dusk", "night") and not obs.self_.isSleeping:
             parts.append("It is getting dark: shelter, light and sleep matter more than progress.")
+        home = self.home_advice(obs)
+        if home:
+            parts.append(home)
+        threat = obs.entities.threat
+        if threat and threat.recommendation in ("retreat", "flee"):
+            parts.append(f"My body reads the odds as {threat.recommendation.upper()} (danger {threat.danger:.0%}): {', '.join(threat.reasons[:3])}. Do not start a fight you cannot win.")
         if not lvl.may_wander_far:
             parts.append("Stay within ~60 blocks of players or home at this stage.")
         return "\n".join(parts)
@@ -480,12 +524,13 @@ class CognitiveLoop:
             manifest = manifest_text(self.body.hello.actions if self.body.hello else [])
             self._system_prompt = system_prompt(self.persona.render(), manifest, self.language, self.identity.level.frame)
         known = self.body.action_names
-        req = build_request(self._system_prompt, context, max_tokens=self.cfg.max_decision_tokens)
+        temperature = self.reflection.temperature(0.5)
+        req = build_request(self._system_prompt, context, max_tokens=self.cfg.max_decision_tokens, temperature=temperature)
         resp = await self.router.chat(req)
         decision = parse_decision(resp, known)
         if not decision.ok:
             self.timeline.add("note", f"my first thought was invalid ({'; '.join(decision.problems)[:120]}), thinking again")
-            retry = build_request(self._system_prompt, context, max_tokens=self.cfg.max_decision_tokens, retry_note="Your previous answer was rejected: " + "; ".join(decision.problems) + ". Answer again with a valid JSON decision.")
+            retry = build_request(self._system_prompt, context, max_tokens=self.cfg.max_decision_tokens, temperature=min(temperature, 0.2), retry_note="Your previous answer was rejected: " + "; ".join(decision.problems) + ". Answer again with a valid JSON decision.")
             resp = await self.router.chat(retry)
             decision = parse_decision(resp, known)
         return decision
@@ -496,9 +541,11 @@ class CognitiveLoop:
     async def _execute(self, d: Decision, obs: Observation) -> None:
         if not d.ok:
             self._consecutive_bad_decisions += 1
+            self.reflection.decision_rejected(d.problems)
             self.timeline.add("note", f"could not form a valid decision: {'; '.join(d.problems)[:160]}")
             return
         self._consecutive_bad_decisions = 0
+        self.reflection.decision_accepted()
         self.timeline.add("plan", f"{d.reason[:200]} → {describe_decision(d)}", importance=0.2)
         if d.goal_update:
             self._apply_goal_update(d.goal_update)
@@ -601,6 +648,7 @@ class CognitiveLoop:
                 await self.body.stop()
         self._task_before = obs
         self._action_label = f"{name}"
+        self._action_sig = signature_of("primitive", name, args)
         self.stats.actions += 1
         self.timeline.add("action", f"{name} {args}"[:200], importance=0.2)
         self._action_task = asyncio.create_task(self._run_action(name, args), name=f"action-{name}")
@@ -611,6 +659,8 @@ class CognitiveLoop:
         except BodyError as exc:
             self._last_result_text = f"{name} FAILED before starting: {exc.code}: {exc.message}"
             self.timeline.add("failure", self._last_result_text[:200], importance=0.5)
+            self.reflection.record(self._action_sig, False, exc.code, exc.message)
+            self.drives.on_event("failure")
             self.wake(f"action failed: {name}")
             return
         except asyncio.CancelledError:
@@ -627,6 +677,7 @@ class CognitiveLoop:
                 await self.body.stop()
         self._task_before = obs
         self._action_label = f"skill: {goal}"
+        self._action_sig = signature_of("skill", None, goal=goal)
         self.stats.skills += 1
         self.timeline.add("action", f"working on a program to: {goal}", importance=0.3)
         self._action_task = asyncio.create_task(self._run_skill(goal, obs), name="skill")
@@ -641,6 +692,7 @@ class CognitiveLoop:
                 await self.body.stop()
         self._task_before = obs
         self._action_label = f"designing and building: {brief}"
+        self._action_sig = signature_of("design", None, goal=brief)
         self.stats.actions += 1
         self.timeline.add("action", f"designing and building: {brief}"[:200], importance=0.4)
 
@@ -679,6 +731,7 @@ class CognitiveLoop:
                 await self.body.stop()
         self._task_before = obs
         self._action_label = f"skill {name}"
+        self._action_sig = signature_of("stored_skill", name, args)
         self.stats.skills += 1
         self.timeline.add("action", f"running my skill {name} {args}"[:200], importance=0.3)
 
@@ -724,6 +777,7 @@ class CognitiveLoop:
         self._last_result_text = result_text
         ok = bool(result and result.ok)
         self.timeline.add("result" if ok else "failure", result_text[:300], importance=0.3 if ok else 0.5)
+        self.reflection.record(self._action_sig or "?", ok, (result.errorCode if result else "") or "", (result.error if result else "") or "")
         if not ok:
             self.drives.on_event("failure")
         task = self.planner.current_task()
@@ -756,5 +810,6 @@ class CognitiveLoop:
             "drives": self.drives.state.__dict__,
             "goals": self.planner.progress(),
             "last_result": self._last_result_text[:200],
+            "reflection": self.reflection.snapshot(),
             "router": self.router.health(),
         }

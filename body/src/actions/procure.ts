@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { BodyError, ErrorCodes } from '../protocol.js';
 import { countItem, inventorySummary, normalizeName, resolveItemNames } from '../motor/items.js';
 import { ProcurementPlanner, describePlan, type Plan, type PlanStep } from '../motor/procurement.js';
+import { isOre, miningAdvice } from '../motor/ores.js';
 import { throwIfAborted } from '../util/async.js';
 import { distance } from '../util/geometry.js';
 import { ensureCraftingTable, chooseFuel } from './crafting.js';
@@ -21,6 +22,10 @@ const MINE_SEARCH_RADIUS = 48;
 const HUNT_RADIUS = 40;
 /** How many times a mine step may come back empty-handed (with an exploration in between) before giving up. */
 const MAX_EXPLORATIONS = 2;
+/** Ores get one more search: a descent to the right depth, then branch-mining tunnels. */
+const MAX_ORE_SEARCHES = 3;
+/** Length of one branch-mining tunnel when an ore is not in sight at the right depth. */
+const TUNNEL_LENGTH = 24;
 /** How many consecutive failures of the very same step are tolerated before the whole `get` stops. */
 const MAX_STEP_RETRIES = 2;
 
@@ -105,6 +110,43 @@ async function ensureFuel(ctx: ActionContext, items: number, deps: ProcureDeps):
   await deps.runSub(ctx, 'mine', { name: 'log', count: Math.max(2, Math.ceil(items / 1.5)), maxDistance: MINE_SEARCH_RADIUS });
 }
 
+interface CourseOutcome {
+  steps: number;
+  end: { x: number; y: number; z: number };
+  reachedTarget?: boolean;
+  oresSeen: Record<string, number>;
+  oresMined?: number;
+  stoppedBecause: string;
+}
+
+function describeOres(seen: Record<string, number>): string {
+  const parts = Object.entries(seen).map(([n, c]) => `${c} ${n}`);
+  return parts.length ? `, saw ${parts.join(', ')}` : '';
+}
+
+/**
+ * The ore is not in sight. A player knows where ores live: descend to the right level first (one search),
+ * then branch-mine at that level (the remaining searches). Each search ends the step; the loop re-plans and
+ * `mine` looks again from the new spot, where the walls of the course now expose what was dug past.
+ */
+async function searchForOre(ctx: ActionContext, step: PlanStep, sources: string[], tries: number, deps: ProcureDeps): Promise<StepOutcome> {
+  const bot = ctx.bot;
+  if (tries > MAX_ORE_SEARCHES) return { ok: false, detail: `cannot find ${sources.join('/')} even after digging for it`, blocked: true };
+  const advice = miningAdvice(sources, bot.entity.position.y, String(bot.game?.dimension ?? 'overworld'));
+  if (advice.move === 'elsewhere') return { ok: false, detail: `${step.item}: ${advice.reason}`, blocked: true };
+  if ((advice.move === 'descend' || advice.move === 'ascend') && advice.targetY !== null) {
+    if (advice.move === 'ascend') return { ok: false, detail: `${step.item}: ${advice.reason} — climb back up first`, blocked: true };
+    ctx.progress(`no ${step.item} in sight at Y ${Math.floor(bot.entity.position.y)}: ${advice.reason} — descending`, { advice });
+    const res = await deps.runSub<CourseOutcome>(ctx, 'descend', { toY: advice.targetY, mineOres: true });
+    const ok = res.steps > 0;
+    return { ok, detail: `${ok ? 'descended' : 'could not descend'} to Y ${res.end.y} for ${step.item} (${res.stoppedBecause}${describeOres(res.oresSeen)})` };
+  }
+  ctx.progress(`no ${step.item} in sight: branch-mining at Y ${Math.floor(bot.entity.position.y)} (${tries}/${MAX_ORE_SEARCHES})`);
+  const res = await deps.runSub<CourseOutcome>(ctx, 'tunnel', { length: TUNNEL_LENGTH, mineOres: true });
+  const ok = res.steps > 0;
+  return { ok, detail: `${ok ? 'tunnelled' : 'could not tunnel'} ${res.steps} blocks looking for ${step.item} (${res.stoppedBecause}${describeOres(res.oresSeen)})` };
+}
+
 export async function executeStep(ctx: ActionContext, step: PlanStep, explorations: Map<string, number>, deps: ProcureDeps = defaultDeps): Promise<StepOutcome> {
   const bot = ctx.bot;
   switch (step.kind) {
@@ -139,9 +181,11 @@ export async function executeStep(ctx: ActionContext, step: PlanStep, exploratio
           throw err;
         }
       }
-      // Nothing in range: explore once towards fresh terrain; the next planning round retries.
+      // Nothing in range. An ore is a matter of depth: dig down to where it is dense, then branch-mine.
+      // Anything else: explore towards fresh terrain. The next planning round retries from the real inventory.
       const tries = (explorations.get(step.item) ?? 0) + 1;
       explorations.set(step.item, tries);
+      if (sources.some(isOre)) return searchForOre(ctx, step, sources, tries, deps);
       if (tries > MAX_EXPLORATIONS) return { ok: false, detail: `cannot find ${sources.join('/')} nearby even after exploring`, blocked: true };
       ctx.progress(`no ${step.item} source nearby, exploring (${tries}/${MAX_EXPLORATIONS})`);
       const found = await deps.runSub<{ found: unknown }>(ctx, 'explore', { direction: 'random', maxSeconds: 40, lookFor: step.item === 'any_log' ? ['oak_log', 'birch_log', 'spruce_log'] : sources });

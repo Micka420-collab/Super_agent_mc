@@ -26,6 +26,11 @@ describe('observer', () => {
     expect(obs.entities.hostiles[0]?.name).toBe('zombie');
     expect(obs.entities.hostiles[0]?.bearing).toBe('N');
     expect(obs.entities.hostiles[0]?.relative).toBe('ahead');
+    // the body reads the odds: one zombie, bread in hand, no armor → not a fight to pick
+    expect(obs.entities.threat?.count).toBe(1);
+    expect(obs.entities.threat?.danger).toBeGreaterThan(0);
+    expect(obs.entities.threat?.reasons).toContain('no armor');
+    expect(['watch', 'fight', 'retreat']).toContain(obs.entities.threat?.recommendation);
     expect(obs.entities.players[0]?.username).toBe('Steve');
     expect(obs.entities.players[0]?.heldItem).toBe('diamond_sword');
     expect(obs.entities.items[0]?.itemName).toBe('oak_log');

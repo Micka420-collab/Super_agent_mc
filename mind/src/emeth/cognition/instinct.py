@@ -6,6 +6,7 @@ and drives the LLM uses, and it produces the same `Decision` objects, so executi
 special — except that the timeline says *instinct* did it, which the mind reads when it comes back.
 
 Priorities (first match wins):
+  0. the body reads the odds as "flee" → run (even if something is running);
   1. something is already running → keep;
   2. starving with food in hand → eat;
   3. dusk/night outside → sleep in a carried bed, else the `emergency_shelter` skill if the library has it, else wait;
@@ -100,6 +101,11 @@ def instinct(ctx: InstinctContext) -> Decision:
     inv = obs.inventory.summary()
     s = obs.self_
     can = ctx.known_actions.__contains__
+
+    threat = obs.entities.threat
+    if threat is not None and threat.recommendation == "flee" and threat.nearest and can("flee"):
+        # the reflex layer runs first; this covers the gap when the mind is woken by the threat before the reflex fires
+        return Decision(reason=f"instinct: the odds are bad ({', '.join(threat.reasons[:3])}), getting away", action_type="primitive", action_name="flee", action_args={"distance": 24})
 
     if ctx.busy or obs.action is not None:
         return Decision(reason="instinct: my body is busy, letting it finish", action_type="keep")

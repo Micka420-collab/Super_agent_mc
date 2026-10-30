@@ -17,6 +17,7 @@ import { getLogger } from '../util/logger.js';
 import { distance } from '../util/geometry.js';
 import { equipBestWeapon } from './items.js';
 import { fleeFrom, holdControl, stopAllMovement } from './movement.js';
+import { assessThreat, type ThreatAssessment } from './threat.js';
 
 export type ReflexEmitter = (payload: Record<string, unknown>) => void;
 
@@ -101,6 +102,35 @@ export class ReflexSystem {
     return best;
   }
 
+  /** The same assessment the observation carries, from the live entities (never counts players or allies). */
+  assess(range = 24): ThreatAssessment {
+    const bot = this.bot;
+    const hostiles: { name: string; distance: number }[] = [];
+    for (const e of Object.values(bot.entities)) {
+      if (!e || e === bot.entity || !e.position) continue;
+      const name = e.name ?? '';
+      const kind = classifyEntity({ type: e.type, name, category: bot.registry.entitiesByName?.[name]?.category });
+      if (kind === 'player') continue;
+      const angry = this.lastAttackerId === e.id && Date.now() - this.lastHurtAt < 8_000;
+      if (!isThreat(kind, name, angry)) continue;
+      const d = distance(bot.entity.position, e.position);
+      if (d <= range) hostiles.push({ name, distance: d });
+    }
+    const slot = (dest: 'head' | 'torso' | 'legs' | 'feet') => bot.inventory.slots[bot.getEquipmentDestSlot(dest)]?.name ?? null;
+    const t = bot.time.timeOfDay;
+    const phase = t >= 23000 || t < 1000 ? 'dawn' : t < 12000 ? 'day' : t < 13000 ? 'dusk' : 'night';
+    const feet = bot.blockAt(bot.entity.position);
+    return assessThreat({
+      hostiles,
+      health: bot.health,
+      armor: { head: slot('head'), torso: slot('torso'), legs: slot('legs'), feet: slot('feet') },
+      heldItem: bot.heldItem?.name ?? null,
+      offhandItem: bot.inventory.slots[45]?.name ?? null,
+      phase,
+      skyLight: feet?.skyLight ?? 15,
+    });
+  }
+
   private onCooldown(name: string, ms: number): boolean {
     const until = this.cooldowns.get(name) ?? 0;
     if (Date.now() < until) return true;
@@ -154,13 +184,15 @@ export class ReflexSystem {
       };
     }
 
-    // 3. Flee when weak
+    // 3. Flee when weak — or when the odds are plainly bad (a crowd, a creeper, bare hands at night)
     const threat = this.nearestThreat(Math.max(cfg.defendRange, 8));
-    if (threat && bot.health <= cfg.fleeAtHealth) {
+    const odds = threat ? this.assess() : null;
+    const overwhelmed = !!odds && odds.danger >= cfg.fleeAtDanger && odds.recommendation === 'flee';
+    if (threat && (bot.health <= cfg.fleeAtHealth || overwhelmed)) {
       return {
         name: 'flee',
         priority: 80,
-        reason: `health ${bot.health} with ${threat.entity.name} at ${threat.dist.toFixed(1)}m`,
+        reason: overwhelmed && odds ? `danger ${odds.danger} (${odds.reasons.slice(0, 3).join(', ')})` : `health ${bot.health} with ${threat.entity.name} at ${threat.dist.toFixed(1)}m`,
         run: async (running) => {
           await fleeFrom(bot, threat.entity.position, cfg.fleeDistance, running.controller.signal, 12_000).catch(() => undefined);
         },

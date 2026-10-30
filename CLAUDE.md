@@ -45,6 +45,9 @@ Avant de pousser : les deux suites passent, `ruff`/`mypy`/`tsc` propres, fixture
 | Nouveau jalon de survie | `cognition/planner.py::LADDER` (+ spec vérifiable dans `check_success`) |
 | Nouvelle primitive d'architecte | `builder/dsl.py` + `builder/compiler.py` + test |
 | Nouvelle source d'item (cuisson, mob, cueillette) | `body/src/motor/procurement.ts` (`SMELTING`, `MOB_SOURCES`, `GATHER_HINTS`, `NATURAL_BLOCKS`) + exécution dans `actions/procure.ts::executeStep` + cas dans `body/test/procurement.test.ts` |
+| Nouveau minerai / profondeur, nouveau danger de creusage | `body/src/motor/ores.ts` (`ORE_DEPTHS`, `LIQUID_HAZARDS`, `FALLING_BLOCKS`) + `motor/digging.ts::assessSite` + `body/test/ores.test.ts`, `digging.test.ts` |
+| Nouveau mob ou pièce d'équipement dans le rapport de force | `body/src/motor/threat.ts` (`MOB_WEIGHT`, `ARMOR_POINTS`, `WEAPON_DAMAGE`) + `body/test/threat.test.ts` |
+| Nouvelle alternative quand l'agent tourne en rond | `mind/src/emeth/cognition/reflection.py::ALTERNATIVES` + `mind/tests/test_reflection.py` |
 
 ## Conventions
 - TypeScript : ESM, `strict`, `noUncheckedIndexedAccess`, pas de `any` sauf frontière mineflayer (caster via `unknown`).

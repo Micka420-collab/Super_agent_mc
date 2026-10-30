@@ -35,15 +35,26 @@ index.ts ─ createBody ─┬─ Observer (perception/observer.ts)   observatio
   de monde et se réveille — première moitié de l'apprentissage par observation (INNOVATIONS 17).
 
 ### Motricité
-- 53 primitives déclarées avec zod (`actions/*.ts`) → un **manifeste** JSON-schema et une **doc d'API de skills**
+- **Rapport de force** (`motor/threat.ts`, `entities.threat`) : les hostiles (poids par espèce, distance, tir),
+  l'armure (points réels), l'arme, le bouclier, la vie et la nuit dehors → `danger` 0–1, `recommendation`
+  `calm | watch | fight | retreat | flee`, raisons lisibles (« creeper 5m (explosive) », « no armor »). Pur, testé.
+- 56 primitives déclarées avec zod (`actions/*.ts`) → un **manifeste** JSON-schema et une **doc d'API de skills**
   générés depuis la même source. Catégories : movement, mining, crafting, building, combat, inventory, social, survival,
   perception, meta. Chaque primitive renvoie un résultat structuré (`inventoryDelta`, `placed/skipped/failures`,
   `missing: [{name, missing}]`…) et lève des `BodyError` codés (`MISSING_ITEM`, `NO_PATH`, `TIMEOUT`, `INTERRUPTED`…).
 - `ActionRunner` sérialise : une action à la fois, `AbortSignal` coopératif, timeout, interruption par les réflexes avec
   priorité (`interruptedBy` dans le résultat + événement `action.interrupted`).
-- **Réflexes** (`ReflexSystem.evaluate()` toutes les 2 ticks) : `escape_fire` 90, `surface` 85, `flee` 80,
-  `avoid_creeper` 75, `defend` 60 (jamais contre un joueur — c'est l'esprit qui décide), auto-eat via le plugin. Chaque
-  déclenchement est rapporté (`reflex` start/end) pour que l'esprit raisonne sur ce que son corps a fait.
+- **Réflexes** (`ReflexSystem.evaluate()` toutes les 2 ticks) : `escape_fire` 90, `surface` 85, `flee` 80 (vie basse
+  **ou** rapport de force perdu : `fleeAtDanger`, 0,8 par défaut — trois zombies à mains nues la nuit font fuir même à
+  pleine vie), `avoid_creeper` 75, `defend` 60 (jamais contre un joueur — c'est l'esprit qui décide), auto-eat via le
+  plugin. Chaque déclenchement est rapporté (`reflex` start/end) pour que l'esprit raisonne sur ce que son corps a fait.
+- **Creuser en sécurité** (`motor/ores.ts`, `motor/digging.ts`, primitives `descend`, `tunnel`, `ore_info`) : la table
+  de distribution des minerais (1.18+ : diamant/redstone −58, or −16, lapis 0, fer 16, cuivre 48, charbon en surface,
+  émeraude en montagne, débris antiques au Nether) donne un conseil `descend | ascend | here | elsewhere` ; avant chaque
+  marche d'escalier ou mètre de tunnel, `assessSite` relève une boîte d'une cellule de marge : liquide ou magma →
+  stop, bloc non chargé → stop (« never dig blind »), rien sous le prochain pas → stop (grotte), bedrock → stop, gravier
+  au-dessus → creuser et attendre, minerai sur les parois → noté puis miné (jamais sous les pieds). Torches sur la marche
+  précédente, arrêt sur santé ou inventaire plein, rapport `{end, reachedTarget, oresSeen, stoppedBecause}`.
 - Déplacement : `mineflayer-pathfinder` avec profils (`DEFAULT` creuse/parkour, `CAREFUL` non), blocs protégés jamais
   cassés en chemin (coffres, tables, verre) ; le profil est redit à chaque déplacement (jamais hérité). Pose de blocs :
   poste de tir calculé (`standOffSpot` : deux cellules d'écart sur un axe pour que la hitbox ne touche jamais la cible,
@@ -63,7 +74,9 @@ index.ts ─ createBody ─┬─ Observer (perception/observer.ts)   observatio
   (`shear`) au lieu de tuer le mouton. Le plan est compacté par `mergeSteps` uniquement quand
   `isFeasible` (simulation d'inventaire pas à pas) le prouve. `get` exécute l'étape de tête avec les primitives
   ordinaires (`mine`/`craft`/`smelt`/`attack`/`explore`), **replanifie depuis l'inventaire réel après chaque étape**,
-  explore deux fois au plus quand une source manque, détecte les étapes qui stagnent et s'arrête avec le plan restant
+  explore deux fois au plus quand une source manque — **sauf pour un minerai** : il `descend` d'abord au bon niveau,
+  puis `tunnel` (deux fois) en prenant ce que les parois exposent, et refuse net un minerai d'une autre dimension —,
+  détecte les étapes qui stagnent et s'arrête avec le plan restant
   (`MISSING_ITEM`) plutôt que de boucler. Testé contre un monde simulé (`test/procure.test.ts`).
 
 ### Skills (code généré)
@@ -94,6 +107,7 @@ runtime.build_mind ─┬─ BodyClient (bridge/client.py)             RPC + fil
                     ├─ Identity (self/identity.py)               récit + métriques + niveaux d'autonomie
                     ├─ Planner (cognition/planner.py)            pile d'objectifs + échelle de survie
                     ├─ Drives (cognition/drives.py)              pulsions homéostatiques
+                    ├─ Reflection (cognition/reflection.py)      métacognition : boucles d'échec → [REFLECTION]
                     ├─ Consolidator (memory/consolidation.py)    réécriture roulante + rêve
                     ├─ Critic, SkillSynthesizer, Designer
                     ├─ ControlServer (control.py)                canal local WS/JSON-RPC pour la façade MCP et le tableau de bord
@@ -109,12 +123,26 @@ runtime.build_mind ─┬─ BodyClient (bridge/client.py)             RPC + fil
   propose la prochaine tâche) → `_context` → `_decide` (1 appel + 1 correction) → `_execute`.
 - Fin d'action → `_on_result` : timeline, pulsions, **critic** sur la tâche courante (programmatique → LLM), progression
   de l'échelle et de l'identité, puis réveil « action result » (le feedback ChatClef qui enchaîne).
-- Mort → respawn différé ; sommeil → `dream()` en tâche de fond ; `writable_book` dans l'inventaire → journal écrit en jeu.
+- Mort → respawn différé ; sommeil → `dream()` en tâche de fond, drapeau `slept` du planner (jalon « lit ») et lieu
+  **`home`** marqué là où il dort ; `writable_book` dans l'inventaire → journal écrit en jeu.
+- **Foyer et horloge** : `[DECISION]` dit où est la maison, à combien de minutes de marche, et compare au temps qui reste
+  avant le crépuscule (« Dusk in ~3 min: head back now ») ; la nuit loin du lit, il conseille de s'abriter sur place.
+
+### Réflexion (`cognition/reflection.py`)
+Chaque tentative est enregistrée sous une signature stable (`mine({"count":3,"name":"diamond_ore"})`, `skill: …`,
+`design: …`) avec son issue et son code d'erreur ; chaque décision rejetée est comptée. Le rendu `[REFLECTION]` apparaît
+quand : le même appel a échoué ≥ 2 fois de suite avec le même code ; ≥ 3 échecs consécutifs partagent un code
+(`NO_PATH` partout) ; ≥ 2 pensées ont été rejetées ; la tâche courante en est à sa 3ᵉ tentative. Chaque code a son
+alternative (`NOT_FOUND` → explorer ailleurs ou `descend`/`tunnel` pour un minerai, `MISSING_TOOL` → `get` l'outil…).
+Si la réflexion est montrée deux fois sans changement, elle exige un changement de méthode, de l'aide, ou l'abandon
+motivé du but. Les pensées rejetées abaissent la température de la décision (0,5 → 0,35 → 0,2). Les jalons `custom`
+(abri, ferme, portail) validés par le critic deviennent des drapeaux du planner, sinon l'échelle les reproposait sans fin.
 
 ### Instinct (`cognition/instinct.py`)
 Quand aucun fournisseur ne répond (`LLMError` : panne, quota, clé expirée), la boucle n'attend pas : `act_on_instinct`
 produit une `Decision` déterministe depuis la même observation — garder une action en cours, manger si affamé, dormir
-dans un lit porté ou lancer le skill `emergency_shelter` à la nuit, sinon traduire le jalon courant de l'échelle en
+dans un lit porté ou lancer le skill `emergency_shelter` à la nuit, fuir si le corps lit un rapport de force perdu
+(`entities.threat.recommendation == flee`), sinon traduire le jalon courant de l'échelle en
 primitive (`get wooden_pickaxe`, `mine log`…), sinon attendre. Même chemin d'exécution, même mémoire : la timeline
 porte des entrées `instinct: …` que l'esprit relit à son retour. Le type `stored_skill` (réservé à l'instinct) exécute
 un skill de la bibliothèque par son nom, sans modèle de code.
