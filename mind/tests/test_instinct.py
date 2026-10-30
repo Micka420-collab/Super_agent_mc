@@ -181,4 +181,4 @@ def test_tool_wear_and_missing_pickaxe_are_in_the_context():
     assert "almost worn out (9 uses left)" in render_inventory(obs)
     obs.inventory.items = [ItemStack(name="cobblestone", count=64, slot=0), ItemStack(name="stick", count=2, slot=1)]
     text = render_inventory(obs)
-    assert "NO PICKAXE" in text and "you carry what a stone_pickaxe needs" in text
+    assert "NO PICKAXE" in text and "you carry what a stone_pickaxe needs" in text and "`get stone_pickaxe`" in text

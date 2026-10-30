@@ -163,7 +163,11 @@ def render_tools(obs: Observation) -> str:
         sticks = inv.get("stick", 0)
         cobble = inv.get("cobblestone", 0) + inv.get("cobbled_deepslate", 0) + inv.get("blackstone", 0)
         planks = sum(c for n, c in inv.items() if n.endswith("_planks"))
-        can = "you carry what a stone_pickaxe needs (3 cobblestone + 2 sticks, at a crafting table)" if cobble >= 3 and sticks >= 2 else "get wood first (logs → planks → sticks) or stone"
+        can = (
+            "you carry what a stone_pickaxe needs (3 cobblestone + 2 sticks) — `get stone_pickaxe` does the rest: it finds or reaches a crafting table, breaking through walls by hand if you are shut in"
+            if cobble >= 3 and sticks >= 2
+            else "`get wooden_pickaxe` plans it from what you have (logs → planks → sticks → table)"
+        )
         warnings.append(f"NO PICKAXE: stone and ores cannot be mined by hand (7 s per block, nothing drops) — make one first: {can}" + ("; a crafting table needs 4 planks" if planks < 4 else ""))
     if not parts and not warnings:
         return ""
