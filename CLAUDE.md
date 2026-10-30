@@ -15,6 +15,7 @@ cd body && npm install && npm run typecheck && npm test            # unitaires (
 cd body && npm run test:e2e                                        # serveur Minecraft JS local (flying-squid 1.21.1, ≈10 s)
 cd body && npx tsx src/tools/gen-fixtures.ts ../protocol/fixtures  # après tout changement de protocol.ts
 cd mind && . .venv/bin/activate && pytest && ruff check src tests && mypy src/emeth
+cd mind && python scripts/live_smoke.py                              # corps + esprit réels, cerveau scripté (serveur + body lancés)
 ```
 Avant de pousser : les deux suites passent, `ruff`/`mypy`/`tsc` propres, fixtures régénérées si le protocole a bougé.
 
