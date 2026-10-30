@@ -3,7 +3,8 @@ import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
 import { BodyError, ErrorCodes } from '../protocol.js';
 import { DEFAULT_PROFILE, goTo, goToBlock, type MovementProfile } from '../motor/movement.js';
-import { equipBestTool, findItem, hasFreeSlot, inventorySummary, resolveBlockNames, type ItemSummary } from '../motor/items.js';
+import { equipBestTool, findItem, hasFreeSlot, inventorySummary, normalizeName, resolveBlockNames, type ItemSummary } from '../motor/items.js';
+import { ProcurementPlanner } from '../motor/procurement.js';
 import { assessSite, cardinalFromYaw, stairStep, summariseOres, tunnelStep, type BlockLookup, type Cardinal, type Course, type NamedCell } from '../motor/digging.js';
 import { describeOre, miningAdvice } from '../motor/ores.js';
 import { placeBlockAt } from '../motor/placing.js';
@@ -69,10 +70,21 @@ defineAction({
   }),
   async run(ctx, a) {
     const bot = ctx.bot;
-    const names = resolveBlockNames(bot, a.name);
+    let names = resolveBlockNames(bot, a.name);
+    const find = (set: Set<string>) => bot.findBlocks({ matching: (b) => set.has(b.name) && isHarvestable(ctx, b), maxDistance: a.maxDistance, count: Math.max(a.count * 4, 16) });
+    let positions = names.length ? find(new Set(names)) : [];
+    if (!positions.length) {
+      // asked for an item rather than a block (cobblestone, coal, raw_iron…): mine what drops it, as a player would
+      const item = normalizeName(a.name);
+      const sources = bot.registry.itemsByName[item] ? new ProcurementPlanner({ registry: bot.registry, inventory: {} }).blocksDropping(item).filter((b) => !names.includes(b)) : [];
+      const found = sources.length ? find(new Set(sources)) : [];
+      if (found.length) {
+        ctx.progress(`${item} comes from ${sources.slice(0, 3).join('/')}: mining that`);
+        names = sources;
+        positions = found;
+      }
+    }
     if (!names.length) throw new BodyError(ErrorCodes.NOT_FOUND, `unknown block: ${a.name}`);
-    const nameSet = new Set(names);
-    const positions = bot.findBlocks({ matching: (b) => nameSet.has(b.name) && isHarvestable(ctx, b), maxDistance: a.maxDistance, count: Math.max(a.count * 4, 16) });
     if (!positions.length) {
       const advice = miningAdvice(names, bot.entity.position.y, String(bot.game?.dimension ?? 'overworld'));
       const hint = advice.move === 'descend' || advice.move === 'ascend' ? ` — ${advice.reason}: use \`descend\` to Y ${advice.targetY}` : advice.move === 'elsewhere' ? ` — ${advice.reason}` : ' (ripe, if it is a crop) — explore, or `tunnel` if it is an ore';

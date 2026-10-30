@@ -241,6 +241,18 @@ describe('body e2e (flying-squid)', () => {
     expect((cleared.result as { dug: number }).dug).toBeGreaterThanOrEqual(5);
   }, 120_000);
 
+  it('mines the block that drops an item when asked for the item (cobblestone → stone)', async () => {
+    const bot = runtime!.bot;
+    const base = bot.entity.position.floored();
+    const spot = { x: base.x + 2, y: base.y, z: base.z - 2 };
+    const placed = await runtime!.runner.run({ action: 'place', args: { name: 'stone', ...spot } });
+    expect(placed.ok, JSON.stringify(placed)).toBe(true);
+    // no cobblestone block anywhere on a superflat world: before the fix this was NOT_FOUND
+    const res = await runtime!.runner.run({ action: 'mine', args: { name: 'cobblestone', count: 1, maxDistance: 8 } });
+    expect(res.ok, JSON.stringify(res)).toBe(true);
+    expect(bot.blockAt(new Vec3(spot.x, spot.y, spot.z))?.name).toBe('air');
+  }, 60_000);
+
   it('builds a designed cottage (floor, log corners, walls, window panes) from a blueprint', async () => {
     const bot = runtime!.bot;
     const Item = createRequire(import.meta.url)('prismarine-item')(bot.registry) as new (id: number, count: number) => unknown;
