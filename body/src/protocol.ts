@@ -346,6 +346,7 @@ export const EventNameSchema = z.enum([
   'entity.gone',
   'player.joined',
   'player.left',
+  'player.activity',
   'item.collected',
   'block.broken',
   'block.placed',

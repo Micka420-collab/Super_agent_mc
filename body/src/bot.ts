@@ -9,6 +9,7 @@ import { loader as autoEatPlugin } from 'mineflayer-auto-eat';
 import armorManager from 'mineflayer-armor-manager';
 import { plugin as toolPlugin } from 'mineflayer-tool';
 import type { BodyConfig } from './config.js';
+import { ActivityWatcher, describeEpisode } from './perception/activity.js';
 import { Observer, droppedItemOf } from './perception/observer.js';
 import { buildMovements } from './motor/movement.js';
 import { ActionRunner } from './actions/runner.js';
@@ -158,6 +159,21 @@ export function createBody(config: BodyConfig): BodyRuntime {
   bot.on('diggingCompleted', (block) => {
     emit('block.broken', { name: block.name, position: block.position });
   });
+  // other players at work: attributed block changes, aggregated into episodes worth remembering
+  const activity = new ActivityWatcher((episode) => {
+    observer.pushEvent('player.activity', describeEpisode(episode));
+    emit('player.activity', { ...episode, text: describeEpisode(episode) });
+  });
+  bot.on('blockUpdate', (oldBlock, newBlock) => {
+    if (!oldBlock || !newBlock || !bot.entity) return;
+    const others = Object.values(bot.players)
+      .filter((p) => p.entity && p.username !== bot.username)
+      .map((p) => ({ username: p.username, position: p.entity.position }));
+    if (!others.length) return;
+    activity.onBlockChange(newBlock.position, oldBlock.name, newBlock.name, others, { position: bot.entity.position, busy: runner.isBusy() });
+  });
+  const activityTimer = setInterval(() => activity.tick(), 1_000);
+  bot.once('end', () => clearInterval(activityTimer));
   bot.on('sleep', () => {
     observer.pushEvent('sleep', 'fell asleep');
     emit('sleep', { timeOfDay: bot.time.timeOfDay, day: bot.time.day });

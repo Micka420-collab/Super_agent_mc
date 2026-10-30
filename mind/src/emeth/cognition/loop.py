@@ -258,6 +258,8 @@ class CognitiveLoop:
         if kind == "player.left":
             self.timeline.add("presence", f"{p.get('username')} left the server")
             return None, 0
+        if kind == "player.activity":
+            return self._on_player_activity(p)
         if kind == "item.collected":
             self.timeline.add("result", f"picked up {p.get('count')} {p.get('name')}", importance=0.15)
             return None, 0
@@ -296,6 +298,28 @@ class CognitiveLoop:
         if kind == "reconnected":
             self.timeline.add("note", "reconnected to my body")
             return "reconnected", 0
+        return None, 0
+
+    def _on_player_activity(self, p: dict[str, Any]) -> tuple[str | None, int]:
+        """Someone built or dug nearby: remember it as an observation, on the person and on the map."""
+        who = str(p.get("username") or "someone")
+        text = str(p.get("text") or f"{who} worked on some blocks")
+        count = int(p.get("count") or 0)
+        verb = "built" if p.get("kind") == "built" else "dug"
+        self.timeline.add("observed", text, actors=[who], importance=0.3 if count < 20 else 0.5)
+        self.social.on_seen(who)
+        if count >= 12 and verb == "built":
+            mn, mx = p.get("min") or {}, p.get("max") or {}
+            try:
+                cx, cy, cz = (float(mn["x"]) + float(mx["x"])) / 2, (float(mn["y"]) + float(mx["y"])) / 2, (float(mn["z"]) + float(mx["z"])) / 2
+                blocks = p.get("blocks") or {}
+                main = ", ".join(f"{c} {n}" for n, c in sorted(dict(blocks).items(), key=lambda kv: -int(kv[1]))[:3])
+                self.graph.mark_place(f"{who}'s build", cx, cy, cz, kind="structure", notes=f"seen being built by {who}: {main}")
+                self.social.remember(who, f"builds things ({main})")
+            except (KeyError, TypeError, ValueError):
+                pass
+            self.drives.on_event("discovery")
+            return f"{who} is building nearby", 5000
         return None, 0
 
     async def _respawn_later(self) -> None:

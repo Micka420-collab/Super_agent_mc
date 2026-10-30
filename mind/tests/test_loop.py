@@ -162,3 +162,19 @@ async def test_run_loop_processes_events_end_to_end(tmp_path):
     assert any(e.kind == "whisper_in" for e in loop.timeline.entries)
     assert world.reflex_config.get("allies") == ["Steve"]
     await body.close()
+
+
+async def test_watching_a_player_build_is_remembered_on_the_map_and_the_person(tmp_path):
+    world = FakeWorld()
+    loop, body, provider = await make_loop(tmp_path, world)
+    small = {"username": "Steve", "kind": "dug", "count": 4, "blocks": {"stone": 4}, "min": {"x": 1, "y": 60, "z": 1}, "max": {"x": 2, "y": 60, "z": 2}, "text": "Steve dug 4 stone around (1, 60, 1) — a 2×1×2 area, 6s"}
+    assert loop._handle_event(BodyEvent(event="player.activity", ts=0, payload=small)) == (None, 0)  # noqa: SLF001
+    assert any(e.kind == "observed" and "Steve dug 4 stone" in e.text for e in loop.timeline.entries)
+    big = {"username": "Steve", "kind": "built", "count": 30, "blocks": {"oak_planks": 24, "glass_pane": 6}, "min": {"x": 10, "y": 64, "z": 10}, "max": {"x": 15, "y": 67, "z": 14}, "text": "Steve placed 24 oak_planks, 6 glass_pane around (12, 65, 12) — a 6×4×5 area, 40s"}
+    reason, delay = loop._handle_event(BodyEvent(event="player.activity", ts=0, payload=big))  # noqa: SLF001
+    assert reason == "Steve is building nearby" and delay == 5000
+    structures = [n for n in loop.graph.nodes_of("structure") if n.label == "Steve's build"]
+    assert len(structures) == 1 and abs(structures[0].x - 12.5) < 0.01
+    person = loop.store.get_person("Steve")
+    assert person is not None and any("builds things" in n for n in person.notes)
+    await body.close()

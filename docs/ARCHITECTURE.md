@@ -27,6 +27,13 @@ index.ts ─ createBody ─┬─ Observer (perception/observer.ts)   observatio
   luminosité = profondeur, avec marqueurs d'entités projetés par le **même modèle de caméra** que le scan FOV (équiangulaire).
   Aucune dépendance native. La légende couleur→bloc et la description texte sont dérivées des mêmes rayons.
 
+- **Regarder les autres travailler** (`perception/activity.ts`) : chaque changement de bloc vu est attribué au joueur
+  le plus proche à portée de bras (jamais à l'agent, dont les actions se rapportent déjà ; ni à la nature : feuilles,
+  cultures, eau, gravité), puis agrégé par joueur en **épisodes** (« Steve a posé 24 oak_planks, 6 glass_pane autour de
+  (12, 65, 12) — zone 6×4×5, 40 s ») fermés après 8 s de silence ou 96 blocs. Événement `player.activity` : l'esprit le
+  note comme observation, l'inscrit sur la personne et, pour un vrai chantier, pose un nœud `structure` dans le graphe
+  de monde et se réveille — première moitié de l'apprentissage par observation (INNOVATIONS 17).
+
 ### Motricité
 - 53 primitives déclarées avec zod (`actions/*.ts`) → un **manifeste** JSON-schema et une **doc d'API de skills**
   générés depuis la même source. Catégories : movement, mining, crafting, building, combat, inventory, social, survival,

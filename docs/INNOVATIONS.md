@@ -110,8 +110,10 @@ template → mp4 : l'agent publie son propre vlog.
 l'architecte réutilise (toits spruce ici, murs de deepslate là). Apprentissage du goût local.
 
 ### 17. Apprentissage par observation des joueurs
-Le corps voit les blocs posés/cassés et les déplacements des joueurs ; l'esprit infère une procédure (« il fait un
-escalier 1×1 avec des torches tous les 8 blocs ») et la transforme en skill. Imitation → code, puis vérification en sandbox.
+**Moitié livrée** : le corps attribue chaque bloc posé/cassé au joueur à portée de bras et en fait des épisodes
+(« Steve a posé 24 oak_planks, 6 glass_pane autour de (12, 65, 12) en 40 s ») que l'esprit mémorise sur la personne et
+sur la carte. **À venir** : inférer la procédure (« il fait un escalier 1×1 avec des torches tous les 8 blocs ») et la
+transformer en skill — imitation → code, puis vérification en sandbox.
 
 ### 18. Société d'agents avec culture écrite
 Plusieurs corps, un espace de noms de wiki partagé (« la bibliothèque du village »), coordination par chat en jeu et
