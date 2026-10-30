@@ -16,8 +16,18 @@ export function knownApiNames(): Set<string> {
   return new Set(listActions().map((a) => a.name));
 }
 
+/** Top-level argument keys each primitive accepts, derived from its zod schema (object schemas only). */
+export function knownApiArgKeys(): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const a of listActions()) {
+    const shape = (a.schema as unknown as { shape?: Record<string, unknown> }).shape;
+    if (shape && typeof shape === 'object') out.set(a.name, new Set(Object.keys(shape)));
+  }
+  return out;
+}
+
 export function checkSkill(code: string): SkillCheckResult {
-  return analyzeSkill(code, { knownApi: knownApiNames() });
+  return analyzeSkill(code, { knownApi: knownApiNames(), apiArgKeys: knownApiArgKeys() });
 }
 
 function workerPath(): string {

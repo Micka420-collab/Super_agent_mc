@@ -39,7 +39,22 @@ export const FORBIDDEN_PROPERTIES = new Set(['constructor', '__proto__', 'protot
 export interface AnalyzeOptions {
   /** Names available on `api`; calls to anything else are reported. */
   knownApi?: Set<string>;
+  /** Accepted argument keys per primitive: `api.move({ direction })` is reported when `move` only knows `control`/`ms`. */
+  apiArgKeys?: Map<string, Set<string>>;
   maxLength?: number;
+}
+
+/** Keys of an object-literal argument whose names are statically known (identifiers or string keys, no spread). */
+function literalKeys(arg: acorn.Node | undefined): string[] | null {
+  if (!arg || arg.type !== 'ObjectExpression') return null;
+  const keys: string[] = [];
+  for (const prop of (arg as acorn.Node & { properties: (acorn.Node & { computed?: boolean; key?: acorn.Node & { name?: string; value?: unknown } })[] }).properties) {
+    if (prop.type !== 'Property' || prop.computed || !prop.key) return null; // spread or computed: cannot know
+    const key = prop.key.type === 'Identifier' ? prop.key.name : prop.key.type === 'Literal' ? String(prop.key.value) : null;
+    if (key === null || key === undefined) return null;
+    keys.push(key);
+  }
+  return keys;
 }
 
 export function analyzeSkill(code: string, opts: AnalyzeOptions = {}): SkillCheckResult {
@@ -95,6 +110,23 @@ export function analyzeSkill(code: string, opts: AnalyzeOptions = {}): SkillChec
       case 'MetaProperty':
         problems.push('`import.meta` / `new.target` are not allowed');
         break;
+      case 'CallExpression': {
+        // api.<primitive>({ ...literal keys... }) — check the keys against the primitive's schema
+        const callee = n.callee as acorn.Node & { object?: acorn.Node & { name?: string }; property?: acorn.Node & { name?: string }; computed?: boolean };
+        if (callee.type === 'MemberExpression' && callee.object?.type === 'Identifier' && callee.object.name === 'api' && !callee.computed && callee.property?.name) {
+          const known = opts.apiArgKeys?.get(callee.property.name);
+          const keys = literalKeys((n.arguments as acorn.Node[] | undefined)?.[0]);
+          if (known && keys) {
+            const bad = keys.filter((k) => !known.has(k));
+            if (bad.length) {
+              problems.push(
+                `api.${callee.property.name} does not take ${bad.map((k) => `\`${k}\``).join(', ')} (line ${(n.loc as acorn.SourceLocation | undefined)?.start.line}); accepted: ${[...known].sort().join(', ') || 'no arguments'}`,
+              );
+            }
+          }
+        }
+        break;
+      }
       case 'TaggedTemplateExpression':
         break;
       default:

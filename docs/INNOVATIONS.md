@@ -56,9 +56,10 @@ communautés Louvain déterministes deviennent des **régions** nommables ; `des
 prompt « ce que je sais du coin » en quelques lignes.
 
 ### 10. Vocabulaire validé avant le code
-Le modèle choisit parmi 45 primitives au contrat strict (manifeste généré), ne passe au code que pour les tâches
-multi-étapes, et le code ne peut appeler que ces mêmes primitives. Les erreurs sont codées (`MISSING_ITEM` avec la liste
-exacte) : la correction est mécanique, pas une devinette.
+Le modèle choisit parmi 51 primitives au contrat strict (manifeste généré), ne passe au code que pour les tâches
+multi-étapes, et le code ne peut appeler que ces mêmes primitives — l'analyse statique vérifie aussi les clés d'arguments
+littérales contre les schémas zod (`api.move({direction})` est refusé avec la liste acceptée). Les erreurs sont codées
+(`MISSING_ITEM` avec la liste exacte) : la correction est mécanique, pas une devinette.
 
 ### 11. Planificateur d'approvisionnement avec preuve de faisabilité
 L'idée du `TaskCatalogue` d'AltoClef, reconstruite sur `minecraft-data` (recettes, loot tables des blocs et des mobs,

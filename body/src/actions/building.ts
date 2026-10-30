@@ -6,6 +6,7 @@ import { countItem, inventorySummary, normalizeName } from '../motor/items.js';
 import { throwIfAborted } from '../util/async.js';
 import { distance } from '../util/geometry.js';
 import { inventoryDelta } from './mining.js';
+import { runGet } from './procure.js';
 import { defineAction, getAction } from './registry.js';
 
 export const BlockPlacementSchema = z.object({
@@ -48,7 +49,7 @@ defineAction({
   name: 'build',
   category: 'building',
   description:
-    'Place many blocks (a structure). Checks materials first (fails with MISSING_ITEM and the bill of materials), builds bottom-up, skips cells already correct, reports failures per block.',
+    'Place many blocks (a structure). Checks materials first (fails with MISSING_ITEM and the bill of materials, or procures them with `procure: true`), builds bottom-up, skips cells already correct, reports failures per block.',
   longRunning: true,
   schema: z.object({
     blocks: z.array(BlockPlacementSchema).min(1).max(4096),
@@ -56,6 +57,8 @@ defineAction({
     strict: z.boolean().default(false),
     /** Continue even when some materials are missing (place what we can). */
     partial: z.boolean().default(false),
+    /** Obtain missing materials first through the procurement planner (mine/craft/smelt), then build. */
+    procure: z.boolean().default(false),
   }),
   async run(ctx, a) {
     const bot = ctx.bot;
@@ -64,15 +67,34 @@ defineAction({
       const existing = bot.blockAt(new Vec3(b.x, b.y, b.z));
       return !(existing && existing.name === normalizeName(b.name));
     });
-    // 2) materials check
+    // 2) materials check (optionally fetching what is missing)
     const bom = billOfMaterials(todo);
-    const missing: Record<string, number> = {};
-    for (const [name, need] of Object.entries(bom)) {
-      const have = countItem(bot, name);
-      if (have < need) missing[name] = need - have;
+    const computeMissing = () => {
+      const out: Record<string, number> = {};
+      for (const [name, need] of Object.entries(bom)) {
+        const have = countItem(bot, name);
+        if (have < need) out[name] = need - have;
+      }
+      return out;
+    };
+    let missing = computeMissing();
+    const procured: Record<string, string> = {};
+    if (Object.keys(missing).length && a.procure) {
+      for (const [name, shortfall] of Object.entries(missing)) {
+        throwIfAborted(ctx.signal);
+        ctx.progress(`procuring ${shortfall} ${name} for the build`);
+        try {
+          const got = await runGet(ctx, { name, count: countItem(bot, name) + shortfall, maxSteps: 30 });
+          procured[name] = got.done ? `got ${shortfall}` : `partial: have ${got.have}`;
+        } catch (err) {
+          if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+          procured[name] = `failed: ${(err as Error).message}`;
+        }
+      }
+      missing = computeMissing();
     }
     if (Object.keys(missing).length && !a.partial) {
-      throw new BodyError(ErrorCodes.MISSING_ITEM, `missing materials: ${Object.entries(missing).map(([n, c]) => `${c} ${n}`).join(', ')}`, { missing, bom });
+      throw new BodyError(ErrorCodes.MISSING_ITEM, `missing materials: ${Object.entries(missing).map(([n, c]) => `${c} ${n}`).join(', ')}`, { missing, bom, procured });
     }
     // 3) place bottom-up
     const ordered = orderPlacements(todo, bot.entity.position);
@@ -112,6 +134,7 @@ defineAction({
       failures: failures.slice(0, 25),
       failureCount: failures.length,
       missing,
+      ...(Object.keys(procured).length ? { procured } : {}),
       inventoryDelta: inventoryDelta(before, inventorySummary(bot)),
     };
   },

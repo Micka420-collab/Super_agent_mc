@@ -51,3 +51,15 @@ describe('skill static analysis', () => {
     expect(res.problems[0]).toMatch(/syntax error/);
   });
 });
+
+describe('argument key checking', () => {
+  it('reports unknown argument keys against the live primitive schemas', async () => {
+    await import('../src/actions/index.js');
+    const { checkSkill } = await import('../src/skills/sandbox.js');
+    const bad = checkSkill(`async function main(api) { await api.move({ direction: 'forward', seconds: 0.4 }); await api.goto({ x: 1, y: 2, z: 3, range: 1 }); }`);
+    expect(bad.ok).toBe(false);
+    expect(bad.problems.join('\n')).toMatch(/api\.move does not take `direction`, `seconds`.*accepted: control, ms/);
+    const fine = checkSkill(`async function main(api, args) { const a = { ...args }; await api.move(a); await api.get({ name: 'torch', count: 4 }); await api.observe(); }`);
+    expect(fine.ok, fine.problems.join('; ')).toBe(true);
+  });
+});

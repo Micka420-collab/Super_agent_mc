@@ -53,7 +53,9 @@ index.ts ─ createBody ─┬─ Observer (perception/observer.ts)   observatio
 
 ### Skills (code généré)
 1. `analyzeSkill` (acorn) : exige `async function main(api, args)`, interdit `require/import/process/globalThis/eval/
-   Function/setTimeout/…`, les accès `.constructor/.__proto__/.prototype`, signale les `api.x` inconnus.
+   Function/setTimeout/…`, les accès `.constructor/.__proto__/.prototype`, signale les `api.x` inconnus **et les clés
+   d'arguments qu'une primitive n'accepte pas** (`api.move({direction})` → « accepted: control, ms »), dérivées des schémas
+   zod : une erreur de contrat est trouvée avant toute exécution.
 2. Exécution dans un **worker thread** : le code n'a jamais le bot ; chaque `api.<primitive>()` est un message vers le
    thread principal qui exécute la primitive avec le signal d'annulation partagé ; `resourceLimits` mémoire ; **budget
    temps dur** → `worker.terminate()` même en boucle synchrone infinie.
