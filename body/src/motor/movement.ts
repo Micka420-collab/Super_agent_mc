@@ -9,6 +9,7 @@ import type { Vec3Like } from '../protocol.js';
 import { BodyError, ErrorCodes } from '../protocol.js';
 import { raceAbort, sleep, waitFor } from '../util/async.js';
 import { distance } from '../util/geometry.js';
+import { assessEnclosure, solidLookup } from './enclosure.js';
 
 const { Movements, goals } = pathfinderPkg;
 
@@ -77,25 +78,62 @@ function mapPathError(err: unknown): BodyError {
 }
 
 /** Walk until within `range` blocks of the target position. */
+/**
+ * Is a walk still getting somewhere? Stalled when the best distance to the goal has not improved by `minGain`
+ * blocks for `windowMs`. Seen live: `goto` spent its whole 120 s budget without moving a block out of a sealed
+ * shelter, and the mind learnt nothing from the timeout.
+ */
+export class ProgressWatch {
+  private best = Number.POSITIVE_INFINITY;
+  private bestAt = 0;
+  constructor(private readonly windowMs = 25_000, private readonly minGain = 1.5) {}
+
+  /** Feed one sample; true once the walk has stalled. */
+  sample(now: number, dist: number): boolean {
+    if (dist < this.best - this.minGain || this.best === Number.POSITIVE_INFINITY) {
+      this.best = dist;
+      this.bestAt = now;
+      return false;
+    }
+    return now - this.bestAt >= this.windowMs;
+  }
+}
+
 export async function goTo(
   bot: Bot,
   target: Vec3Like,
   range = 1,
   signal?: AbortSignal,
-  opts: { timeoutMs?: number; profile?: MovementProfile } = {},
+  opts: { timeoutMs?: number; profile?: MovementProfile; stallMs?: number } = {},
 ): Promise<void> {
   if (distance(bot.entity.position, target) <= range + 0.3) return;
   // movements are sticky on the pathfinder: always state the profile so a careful build never leaks into the next walk
   bot.pathfinder.setMovements(buildMovements(bot, opts.profile ?? DEFAULT_PROFILE));
   const goal = new goals.GoalNear(target.x, target.y, target.z, range);
+  const start = distance(bot.entity.position, target);
+  const watch = new ProgressWatch(opts.stallMs ?? 25_000);
+  let ticker: NodeJS.Timeout | undefined;
+  const stalled = new Promise<never>((_, reject) => {
+    ticker = setInterval(() => {
+      const left = distance(bot.entity.position, target);
+      if (!watch.sample(Date.now(), left)) return;
+      clearInterval(ticker);
+      bot.pathfinder.stop();
+      const shut = assessEnclosure(solidLookup(bot), bot.entity.position).enclosed;
+      const hint = shut ? ' — I am sealed in: dig my way out first (`ascend` to climb out, or `tunnel` towards it)' : Math.abs(target.y - bot.entity.position.y) > 6 ? ' — the height difference is the problem: `ascend`/`descend` first' : ' — try a closer waypoint or another way round';
+      reject(new BodyError(ErrorCodes.NO_PATH, `not getting any closer (${Math.round(left)} m left of ${Math.round(start)})${hint}`, { distanceLeft: Math.round(left), startDistance: Math.round(start), enclosed: shut }));
+    }, 1000);
+  });
   try {
-    await raceAbort(bot.pathfinder.goto(goal), signal, {
+    await raceAbort(Promise.race([bot.pathfinder.goto(goal), stalled]), signal, {
       timeoutMs: opts.timeoutMs ?? 60_000,
       onCancel: () => bot.pathfinder.stop(),
-      timeoutMessage: 'took too long to reach the destination',
+      timeoutMessage: `took too long to reach the destination (it was ${Math.round(start)} m away)`,
     });
   } catch (err) {
-    throw mapPathError(err);
+    throw err instanceof BodyError ? err : mapPathError(err);
+  } finally {
+    clearInterval(ticker);
   }
 }
 

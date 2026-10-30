@@ -23,7 +23,7 @@ ALTERNATIVES: dict[str, str] = {
     "NOT_FOUND": "what I am looking for is not around here: `explore` in a new direction, or for an ore `descend` to its depth (`ore_info` tells which) and `tunnel` there instead of looking at the surface",
     "MISSING_ITEM": "I lack an ingredient: obtain it first (`get {name}` plans the whole chain), or pick a cheaper alternative",
     "MISSING_TOOL": "I need a better tool first: `get` the pickaxe/axe the error names, then retry",
-    "NO_PATH": "I cannot reach it from here: come closer another way, dig towards it, or choose a reachable target",
+    "NO_PATH": "I cannot reach it from here: if I am sealed in or deep underground, `ascend` out first; otherwise come closer another way, dig towards it, or choose a reachable target",
     "TIMEOUT": "it takes too long in one go: split it into smaller steps (fewer blocks, shorter distance, lower count)",
     "INTERRUPTED": "my body keeps interrupting me (reflexes): deal with the threat or the danger first, then resume",
     "BAD_REQUEST": "the arguments were wrong: reread the primitive signature in the body interface and pass only the listed keys",

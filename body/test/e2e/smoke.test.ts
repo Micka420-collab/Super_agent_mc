@@ -182,7 +182,14 @@ describe('body e2e (flying-squid)', () => {
     expect(t.steps).toBe(3);
     expect(t.end.x).toBe(d.end.x - 3);
     expect(bot.blockAt(new Vec3(t.end.x, t.end.y + 1, t.end.z))?.name).toBe('air');
-    // walk back up to the surface for the rest of the suite
+    // and climb back out by a surveyed staircase going UP (the way out of a sealed shelter or a pit)
+    const up = await runtime!.runner.run({ action: 'ascend', args: { toY: start.y, direction: 'north', torchEvery: 32 } });
+    expect(up.ok, JSON.stringify(up)).toBe(true);
+    const u = up.result as { steps: number; reachedTarget: boolean; end: { x: number; y: number; z: number } };
+    expect(u.steps, JSON.stringify(u)).toBe(3);
+    expect(u.reachedTarget, JSON.stringify(u)).toBe(true);
+    expect(bot.entity.position.floored().y).toBe(start.y);
+    // walk back to the start for the rest of the suite
     const back = await runtime!.runner.run({ action: 'goto', args: { x: start.x + 0.5, y: start.y, z: start.z + 0.5, range: 1, timeoutMs: 30_000 } });
     expect(back.ok, JSON.stringify(back)).toBe(true);
   });

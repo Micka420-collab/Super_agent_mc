@@ -5,7 +5,7 @@ import { BodyError, ErrorCodes } from '../protocol.js';
 import { DEFAULT_PROFILE, goTo, goToBlock, type MovementProfile } from '../motor/movement.js';
 import { equipBestTool, findItem, hasFreeSlot, inventorySummary, normalizeName, resolveBlockNames, type ItemSummary } from '../motor/items.js';
 import { ProcurementPlanner } from '../motor/procurement.js';
-import { assessSite, cardinalFromYaw, stairStep, summariseOres, tunnelStep, type BlockLookup, type Cardinal, type Course, type NamedCell } from '../motor/digging.js';
+import { assessSite, cardinalFromYaw, stairStep, stairUpStep, summariseOres, tunnelStep, type BlockLookup, type Cardinal, type Course, type NamedCell } from '../motor/digging.js';
 import { describeOre, miningAdvice } from '../motor/ores.js';
 import { placeBlockAt } from '../motor/placing.js';
 import { raceAbort, sleep, throwIfAborted } from '../util/async.js';
@@ -189,7 +189,9 @@ const COURSE_PROFILE: MovementProfile = { ...DEFAULT_PROFILE, canDig: false, all
 const DIRECTION = z.enum(['north', 'south', 'east', 'west']);
 
 interface CourseOptions {
-  kind: 'stair' | 'tunnel';
+  kind: 'stair' | 'tunnel' | 'ascent';
+  /** ascent only: stop as soon as the feet are under the open sky */
+  untilSky?: boolean;
   direction?: Cardinal;
   steps: number;
   toY?: number;
@@ -199,7 +201,7 @@ interface CourseOptions {
 }
 
 export interface CourseResult {
-  kind: 'stair' | 'tunnel';
+  kind: 'stair' | 'tunnel' | 'ascent';
   direction: Cardinal;
   steps: number;
   from: { x: number; y: number; z: number };
@@ -256,13 +258,18 @@ export async function digCourse(ctx: ActionContext, o: CourseOptions): Promise<C
   let torches = 0;
   let oresMined = 0;
   let reachedTarget = false;
-  let stoppedBecause = o.kind === 'stair' ? `dug ${o.steps} steps` : `tunnel of ${o.steps} blocks complete`;
+  let stoppedBecause = o.kind === 'tunnel' ? `tunnel of ${o.steps} blocks complete` : `dug ${o.steps} steps`;
   let feet = { x: origin.x, y: origin.y, z: origin.z };
   let behind = feet;
 
   for (let i = 1; i <= o.steps; i++) {
     throwIfAborted(ctx.signal);
-    const course: Course = o.kind === 'stair' ? stairStep(origin, direction, i) : tunnelStep(origin, direction, i);
+    const course: Course = o.kind === 'stair' ? stairStep(origin, direction, i) : o.kind === 'ascent' ? stairUpStep(origin, direction, i) : tunnelStep(origin, direction, i);
+    if (o.kind === 'ascent' && o.toY !== undefined && course.feet.y > o.toY) {
+      reachedTarget = true;
+      stoppedBecause = `reached Y ${feet.y}`;
+      break;
+    }
     if (o.kind === 'stair' && o.toY !== undefined && course.feet.y < o.toY) {
       reachedTarget = true;
       stoppedBecause = `reached Y ${feet.y}`;
@@ -307,7 +314,12 @@ export async function digCourse(ctx: ActionContext, o: CourseOptions): Promise<C
         ctx.log.debug({ err }, 'no spot for a torch here');
       }
     }
-    ctx.progress(`${o.kind === 'stair' ? 'descending' : 'tunnelling'} ${direction}: step ${i}/${o.steps}, Y ${feet.y}`, { feet, oresSeen: oresSeen.size });
+    ctx.progress(`${o.kind === 'stair' ? 'descending' : o.kind === 'ascent' ? 'climbing' : 'tunnelling'} ${direction}: step ${i}/${o.steps}, Y ${feet.y}`, { feet, oresSeen: oresSeen.size });
+    if (o.kind === 'ascent' && o.untilSky && (bot.blockAt(new Vec3(feet.x, feet.y + 1, feet.z))?.skyLight ?? 0) >= 14) {
+      reachedTarget = true;
+      stoppedBecause = `out under the open sky at Y ${feet.y}`;
+      break;
+    }
     if (bot.health < o.minHealth) {
       stoppedBecause = `health ${bot.health} below ${o.minHealth}`;
       break;
@@ -318,6 +330,10 @@ export async function digCourse(ctx: ActionContext, o: CourseOptions): Promise<C
     }
   }
   if (o.kind === 'stair' && o.toY !== undefined && feet.y <= o.toY) reachedTarget = true;
+  if (o.kind === 'ascent' && o.toY !== undefined && feet.y >= o.toY && !reachedTarget) {
+    reachedTarget = true;
+    stoppedBecause = `reached Y ${feet.y}`;
+  }
   await sleep(300, ctx.signal);
   return {
     kind: o.kind,
@@ -354,6 +370,28 @@ defineAction({
     if (y <= a.toY) return { kind: 'stair', steps: 0, reachedTarget: true, stoppedBecause: `already at Y ${y}, at or below ${a.toY}`, end: ctx.bot.entity.position.floored(), oresSeen: {} };
     const steps = Math.min(a.maxSteps, y - a.toY);
     return digCourse(ctx, { kind: 'stair', direction: a.direction, steps, toY: a.toY, torchEvery: a.torchEvery, minHealth: a.minHealth, mineOres: a.mineOres });
+  },
+});
+
+defineAction({
+  name: 'ascend',
+  category: 'mining',
+  description:
+    'Dig a safe 1-wide staircase UP — the way out of a pit, a cave or a sealed shelter when walking (`goto`) finds no path. Surveys every step (lava, water, gravel that would fall, unloaded chunks) and stops under the open sky (default) or at `toY`. Needs a pickaxe.',
+  longRunning: true,
+  schema: z.object({
+    toY: z.number().int().min(-64).max(320).optional().describe('stop at this Y; default: climb until under the open sky'),
+    direction: DIRECTION.optional().describe('defaults to where I am looking — face your destination'),
+    torchEvery: z.number().int().min(2).max(32).default(8),
+    minHealth: z.number().min(0).max(20).default(6),
+    maxSteps: z.number().int().min(1).max(200).default(96),
+    mineOres: z.boolean().default(true),
+  }),
+  async run(ctx, a) {
+    const y = Math.floor(ctx.bot.entity.position.y);
+    if (a.toY !== undefined && y >= a.toY) return { kind: 'ascent', steps: 0, reachedTarget: true, stoppedBecause: `already at Y ${y}, at or above ${a.toY}`, end: ctx.bot.entity.position.floored(), oresSeen: {} };
+    const steps = a.toY !== undefined ? Math.min(a.maxSteps, a.toY - y) : a.maxSteps;
+    return digCourse(ctx, { kind: 'ascent', direction: a.direction, steps, toY: a.toY, untilSky: a.toY === undefined, torchEvery: a.torchEvery, minHealth: a.minHealth, mineOres: a.mineOres });
   },
 });
 

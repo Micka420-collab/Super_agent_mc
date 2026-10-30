@@ -67,6 +67,20 @@ export function stairStep(origin: Vec3Like, dir: Cardinal, i: number): Course {
   return { clear: [{ x, y, z }, { x, y: y + 1, z }, { x, y: y + 2, z }], feet: { x, y, z }, floor: { x, y: y - 1, z } };
 }
 
+/**
+ * Cells of the i-th step of a staircase going UP (out of a pit or a sealed shelter): the new feet and head cells,
+ * plus the cell above the current head so there is room to jump. The floor is the untouched block under the step.
+ */
+export function stairUpStep(origin: Vec3Like, dir: Cardinal, i: number): Course {
+  const [dx, dz] = CARDINALS[dir];
+  const x = Math.floor(origin.x) + dx * i;
+  const y = Math.floor(origin.y) + i;
+  const z = Math.floor(origin.z) + dz * i;
+  const px = x - dx;
+  const pz = z - dz;
+  return { clear: [{ x, y, z }, { x, y: y + 1, z }, { x: px, y: y + 1, z: pz }], feet: { x, y, z }, floor: { x, y: y - 1, z } };
+}
+
 /** Cells of the i-th step of a 1×2 horizontal tunnel. */
 export function tunnelStep(origin: Vec3Like, dir: Cardinal, i: number): Course {
   const [dx, dz] = CARDINALS[dir];
