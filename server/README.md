@@ -30,3 +30,13 @@ ViaProxy traduit les paquets dans les deux sens ; les nouveaux blocs/entités de
 équivalents 26.1 (ils restent visibles et solides, mais leur nom peut être approximatif). Les tests e2e tournent sur
 flying-squid (1.21.1, JS, sans Java) : il ne gère ni les recettes serveur, ni les portes/torches — ces primitives sont à
 valider sur Paper.
+
+## Plugin compagnon
+Construisez le plugin puis déposez-le dans le dossier `plugins/` du serveur avant `docker compose up` :
+```bash
+cd ../plugin && ./gradlew build && mkdir -p ../server/data/plugins && cp build/libs/emeth-companion-*.jar ../server/data/plugins/
+```
+Dans ce conteneur, le jeton de l'esprit n'est pas au chemin par défaut : passez `EMETH_CONTROL_TOKEN` au service `mc`
+(ou renseignez `mind.token` dans `data/plugins/EmethCompanion/config.yml`) et, comme l'esprit tourne hors du conteneur,
+réglez `mind.url` sur l'hôte (`ws://host.docker.internal:8766` avec `mind.allow-remote: true`, ou lancez l'esprit avec
+`--network host`). Voir [`plugin/README.md`](../plugin/README.md).

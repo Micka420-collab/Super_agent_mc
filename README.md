@@ -1,145 +1,242 @@
-# EMETH — un vrai joueur Minecraft, pas un chatbot avec une pioche
+<div align="center">
 
-> *Emeth* (אמת, « vérité ») est le mot écrit sur le front du golem pour lui donner vie. Effacez la première lettre et il
-> redevient argile. EMETH est un agent qui vit dans Minecraft comme un joueur : il **perçoit** (ce que ses yeux voient,
-> pas ce que le serveur sait), il **agit** avec un corps qui a des réflexes, il **parle**, il **se souvient** pendant des
-> semaines, il **construit**, il **apprend ses propres compétences**, il **rêve** quand il dort, et il **gagne son
-> autonomie** avec l'expérience.
+<img src="docs/img/banner.svg" alt="EMETH — un joueur Minecraft autonome" width="100%">
 
-Dépôt : `Micka420-collab/Super_agent_mc`. Monorepo : un **corps** TypeScript (Mineflayer) et un **esprit** Python.
+**Un joueur Minecraft autonome qui perçoit, agit, se souvient et apprend. Pas un chatbot avec une pioche.**
 
-```
-            ┌──────────────────────── esprit (mind/, Python) ─────────────────────────┐
-            │  boucle cognitive événementielle · routeur LLM multi-fournisseurs        │
-            │  mémoire 5 couches · planner + échelle de survie · synthèse de skills    │
-            │  architecte DSL · pulsions · identité & niveaux d'autonomie · rêve       │
-            └───────────────▲──────────────────────────────────────┬──────────────────┘
-                 observations, événements  │  WebSocket JSON  │  actions, skills, chat
-            ┌───────────────┴──────────────────────────────────────▼──────────────────┐
-            │  corps (body/, TypeScript/Mineflayer)                                     │
-            │  perception honnête (FOV, raycast) · rétine (image du POV sans GPU)      │
-            │  réflexes au tick (lave, noyade, fuite, creeper, défense, faim)          │
-            │  56 primitives · sandbox de skills JS (acorn → worker → vm) · bridge      │
-            └───────────────────────────────▲──────────────────────────────────────────┘
-                                             │ protocole Minecraft (joueur normal)
-                                   serveur Minecraft (Paper / vanilla, 1.21.x – 26.1)
-```
+[![Licence MIT](https://img.shields.io/badge/licence-MIT-e0b04b)](LICENSE)
+[![Minecraft 1.21.11](https://img.shields.io/badge/Minecraft-1.21.11-8fa98b)](https://www.minecraft.net)
+[![Paper plugin](https://img.shields.io/badge/plugin-Paper%201.21.11-d97757)](plugin/)
+[![Corps](https://img.shields.io/badge/corps-TypeScript%20·%20Mineflayer-2fa3a0)](body/)
+[![Esprit](https://img.shields.io/badge/esprit-Python%203.11+-34495e)](mind/)
+[![CI](https://github.com/Micka420-collab/Super_agent_mc/actions/workflows/ci.yml/badge.svg)](https://github.com/Micka420-collab/Super_agent_mc/actions/workflows/ci.yml)
 
-## Pourquoi c'est différent
+</div>
 
-Tout a été vérifié contre l'état de l'art d'octobre 2026 (voir [`docs/RESEARCH.md`](docs/RESEARCH.md)) :
+<br>
 
-| Ce que font les autres | Ce que fait EMETH |
+*Emeth* (אמת, « vérité ») est le mot écrit sur le front du golem pour lui donner vie. EMETH est un agent qui joue à
+Minecraft comme une personne : il ne voit que ce que ses yeux voient, il agit avec un corps qui a des réflexes, il parle
+quand il a quelque chose à dire, il se souvient pendant des semaines, il construit, il écrit ses propres compétences,
+il rêve quand il dort, et il gagne son autonomie avec l'expérience.
+
+Il ne triche jamais : pas de `/tp`, pas de `/give`, pas de vision à travers les murs. Les joueurs à côté de lui le voient
+penser grâce au **plugin compagnon**, et peuvent le conseiller. Il reste seul à décider.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Ce qu'il voit.** Sa rétine : une grille de rayons lancés depuis ses yeux, rendue en image sans GPU. La couleur dit le
+bloc, la teinte dit la distance. Le petit carré magenta est un joueur.
+
+<img src="docs/img/retina.png" alt="La rétine d'EMETH : une maison, deux arbres, une lanterne et un joueur">
+
+</td>
+<td width="50%" valign="top">
+
+**Ce qu'il pense.** Le tableau de bord servi par l'esprit lui-même : corps, pulsions, rétine en direct, buts, timeline,
+coûts des modèles, et une boîte pour lui parler en mentor.
+
+<img src="docs/img/dashboard.png" alt="Le tableau de bord « dans la tête » d'EMETH">
+
+</td>
+</tr>
+</table>
+
+<sub>Captures réelles, prises pendant le test de bout en bout (`plugin/e2e/live_companion.py`) sur un serveur Paper 1.21.11.
+La scène devant l'agent a été posée à la console pour la photo.</sub>
+
+<br>
+
+## Ce qu'il sait faire
+
+| | |
 |---|---|
-| Perception omnisciente : les agents DeepMind qui ont fini le jeu « voient à travers la roche » | **Perception honnête** : champ de vision + ligne de vue par raycast ; la **rétine** rend le POV en image pour un modèle de vision, sans GPU |
-| Un LLM par tick ou rien entre deux appels : l'agent meurt pendant que le modèle réfléchit | **Deux vitesses** : réflexes déterministes au tick qui préemptent l'action en cours, esprit lent qui décide |
-| Mémoire = résumé roulant de 500 caractères | **Mémoire à 5 couches** : épisodique, sémantique (wiki markdown = vérité, SQLite = index), spatiale (graphe de monde + régions), procédurale (skills versionnés avec taux de succès), sociale (confiance par joueur) |
-| L'expérience ne se transfère pas (MC-EvoBench) | **Rêve** : dormir dans un lit déclenche la consolidation → leçons, lieux, personnes, projets, récit identitaire |
-| Changer de modèle = repartir de zéro | **Âme portable** : identité, mémoire et skills exportés en markdown/JSON, réimportables sous n'importe quel LLM |
-| Code généré exécuté par `eval` dans le processus du bot | **Sandbox à trois couches** : analyse statique acorn → worker thread → `vm`, budget temps dur, trace des appels |
-| Construction = templates JSON ou liste de coordonnées | **DSL d'architecte** paramétrique → blueprint + critique ASCII/vision, puis `plan_build` **prouve l'ordre de pose** (chaque bloc a un appui quand son tour vient) et le corps **récolte lui-même** les matériaux manquants |
-| Personnalité fixe | **Autonomie gagnée** : 6 niveaux (nouveau-né → éveillé) débloqués par les jours survécus, skills, amitiés, constructions |
-| « get diamond_pickaxe » = le LLM enchaîne des appels à l'aveugle | **Planificateur d'approvisionnement** : item → arbre mine/table/outil/four/chasse compilé depuis les recettes et loot tables, compacté avec preuve de faisabilité, replanifié après chaque étape |
-| Panne d'API = agent figé, la nuit l'emporte | **Instinct** : politique déterministe (manger, s'abriter, dormir, étape suivante de l'échelle via le planificateur) qui prend le relais quand aucun modèle ne répond, et laisse une trace que l'esprit relit à son retour |
-| L'agent est une boîte noire ou une manette | **Façade MCP** : depuis Claude Code/Desktop ou Codex, on voit par ses yeux, on lit sa mémoire et on lui parle en mentor — il pèse le conseil, il ne l'exécute pas |
-| « get diamond » = explorer la surface en espérant | **Il sait où vivent les minerais** : table de distribution par profondeur (diamant −58, fer 16…), `descend` creuse un escalier **relevé à chaque marche** (lave, eau, trou, gravier, chunk non chargé), `tunnel` fait du branch-mining et prend ce que les parois exposent ; `get` descend tout seul |
-| Combat = « frappe ce qui est à portée » ou seuil de vie fixe | **Rapport de force** calculé au tick : mobs (type, distance, tir), armure, arme, bouclier, vie, nuit → danger 0–1 et conseil `fight / retreat / flee` dans l'observation, les pulsions, l'instinct et les réflexes (fuite quand c'est perdu d'avance, même à pleine vie) |
-| L'agent répète la même action ratée jusqu'au budget | **Réflexion** : il remarque qu'il tourne en rond (même appel, même code d'erreur, pensées rejetées, tâche à la N-ième tentative), écrit `[REFLECTION]` avec l'alternative concrète, baisse la température, et finit par abandonner avec une raison |
+| **Percevoir honnêtement** | Champ de vision et ligne de vue par lancer de rayons. Ce qu'il dit voir et ce qu'il montre (la rétine) viennent des mêmes rayons. Mode honnête : ce qui est derrière un mur n'existe pas pour lui. |
+| **Agir avec des réflexes** | Les réflexes tournent à chaque tick, sans modèle de langage : fuir la lave, remonter respirer, s'écarter d'un creeper, se défendre, manger. Ils interrompent l'action en cours et préviennent l'esprit. |
+| **Lire le rapport de force** | Monstres, armure, arme, bouclier, vie et nuit donnent un danger de 0 à 1 et un conseil : combattre, reculer ou fuir. Il fuit une foule même en pleine santé. Un creeper n'est jamais un combat. |
+| **Obtenir ce qu'il lui faut** | `get diamond_pickaxe` devient un plan prouvé (miner, fabriquer, fondre, chasser), recalculé après chaque étape à partir de son inventaire réel. |
+| **Miner comme un joueur** | Il sait où vivent les minerais (diamant à Y −58, fer à 16…). Il descend en escalier en vérifiant chaque marche (lave, eau, trou, gravier, chunk non chargé), puis creuse des galeries. |
+| **Construire** | Un architecte décrit le bâtiment dans un petit langage paramétrique. Le corps vérifie que chaque bloc aura un appui avant de le poser, et récolte lui-même les matériaux manquants. |
+| **Apprendre** | Pour une tâche en plusieurs étapes, il écrit du JavaScript. Le code est analysé, puis exécuté dans un bac à sable à trois couches, et gardé s'il réussit. Il retient aussi ce qu'il voit les joueurs construire. |
+| **Se souvenir** | Cinq couches de mémoire : épisodes, wiki markdown, carte des lieux, compétences, personnes. Quand il dort, il rêve : sa journée devient leçons, lieux et récit. |
+| **Se remettre en question** | Quand il refait la même erreur, il le remarque. Il cherche une autre méthode, demande de l'aide, ou abandonne avec une raison. |
+| **Survivre sans modèle** | Si aucun modèle de langage ne répond, l'instinct prend le relais : manger, s'abriter, dormir, continuer l'échelle de survie. |
+| **Grandir** | Six niveaux d'autonomie, du nouveau-né à l'éveillé, débloqués par l'expérience. Chaque niveau change ce qu'il peut décider seul. |
 
-## État du projet (30 oct. 2026)
+<br>
 
-- ✅ Corps complet, typé, **113 tests** (103 unitaires + 10 e2e sur un vrai serveur Minecraft JS 1.21.1 : spawn, pathfinding, minage, **escalier relevé + tunnel**, pose, **un cottage de 71 blocs construit depuis une blueprint de l'architecte**, planification d'approvisionnement, skill live, bridge authentifié), 56 primitives.
-- ✅ Esprit complet, **61 tests** (routeur, mémoire, cognition, réflexion, builder, boucle de bout en bout avec un corps simulé, canal de contrôle et façade MCP), `ruff` + `mypy` propres.
-- ✅ Chaîne complète validée en direct (`mind/scripts/live_smoke.py`) : corps réel ↔ esprit ↔ MCP (regarder, parler au mentor, répondre dans le jeu).
-- ⏳ Pas encore validé sur un serveur Paper avec de vraies clés LLM : c'est l'étape suivante (voir [`docs/ROADMAP.md`](docs/ROADMAP.md)).
-- ⏳ Voix (Simple Voice Chat), récap vidéo (HyperFrames), sandbox d'imagination, multi-agents : conçus, pas encore codés.
+## Dans le jeu : le plugin compagnon
+
+Un plugin **Paper** donne aux joueurs une fenêtre dans sa tête, sans rien installer côté client
+([`plugin/`](plugin), [ADR-0007](docs/adr/0007-plugin-compagnon-paper.md)).
+
+| | |
+|---|---|
+| **Carte flottante** | Au-dessus de l'agent : ce qu'il fait, sa dernière pensée, le rapport de force. Elle est cachée à l'agent lui-même, qui ne la perçoit jamais. |
+| **Affichage tête haute** | `/emeth hud` : une barre de boss pour le but et l'échelle de survie, une barre d'action pour sa vie, sa faim et le danger, et un tableau latéral pour son humeur, ses pulsions et ses pensées. |
+| **« Dans la tête d'Emeth »** | `/emeth` : un menu rafraîchi en direct avec son état, ses sept pulsions, ce qu'il pense et fait, sa réflexion, ses objectifs, son journal et le moniteur. |
+| **Moniteur rétine** | `/emeth monitor` : une carte, ou un mur de deux cartes, qui montre ce que voient ses yeux. |
+| **Conseiller** | Clic sur la plume, puis on écrit dans le chat : le conseil arrive dans sa prochaine pensée, hors du chat public. Quand il tourne en rond, les mentors reçoivent une ligne cliquable pour lui souffler une autre approche. |
+
+Le plugin est vérifié de bout en bout sur un vrai serveur. Un second client Minecraft joue l'humain et contrôle ce qu'il
+reçoit : barre de boss, tableau latéral, menu, pixels de la carte, réponse de l'agent. Il vérifie aussi, depuis les sens
+de l'agent, que la carte flottante lui reste invisible.
+
+<br>
+
+## Comment il pense
+
+```mermaid
+flowchart LR
+    W["Réveil<br/><sub>chat · blessure · fin d'action<br/>nuit · moment calme</sub>"] --> P["Perception<br/><sub>observation, carte du monde,<br/>pulsions, rapport de force</sub>"]
+    P --> C["Contexte<br/><sub>identité · mémoire · buts<br/>mentor · réflexion</sub>"]
+    C --> D["Décision<br/><sub>un appel au modèle,<br/>JSON validé</sub>"]
+    D --> X["Exécution<br/><sub>primitive · skill · construction<br/>parole</sub>"]
+    X --> V["Vérification<br/><sub>critic programmatique,<br/>puis modèle si flou</sub>"]
+    V --> M["Mémoire<br/><sub>timeline · leçons · rêve</sub>"]
+    M -.-> W
+```
+
+Chaque réveil donne **une** décision : une action, et une parole si elle est utile. Le silence est une réponse valide.
+Les réflexes, l'approvisionnement, la vérification des constructions et l'instinct sont déterministes. Le modèle de
+langage choisit, il ne fait pas tout.
+
+<br>
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph server ["Serveur Minecraft (Paper)"]
+        World["Monde"]
+        Plugin["Plugin compagnon<br/><sub>carte flottante · HUD · menu · moniteur</sub>"]
+    end
+    subgraph body ["Corps — body/ (TypeScript, Mineflayer)"]
+        Senses["Perception honnête · rétine"]
+        Reflexes["Réflexes au tick"]
+        Prims["56 primitives · bac à sable des skills"]
+    end
+    subgraph mind ["Esprit — mind/ (Python)"]
+        Loop["Boucle cognitive"]
+        Memory["Mémoire 5 couches"]
+        Control["Canal de contrôle<br/><sub>tableau de bord · MCP</sub>"]
+    end
+    Players(["Joueurs"]) --- World
+    World <-->|"protocole Minecraft<br/>(un joueur comme les autres)"| body
+    body <-->|"WebSocket JSON<br/>observations · actions"| mind
+    Plugin -->|"lit, conseille<br/>(jamais de commande)"| Control
+    Claude(["Claude Code · Codex"]) -->|"MCP : regarder, conseiller"| Control
+```
+
+Le corps et l'esprit sont deux processus. On peut redémarrer l'un sans l'autre, les mettre sur deux machines, ou changer
+de modèle de langage sans que l'agent oublie qui il est : son **âme** s'exporte en markdown et en JSON.
+Détails dans [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), décisions dans [`docs/adr/`](docs/adr).
+
+<br>
 
 ## Démarrage rapide
-Le guide détaillé de la première session sur un vrai serveur est dans [`docs/FIRST_RUN.md`](docs/FIRST_RUN.md).
 
-Prérequis : Node ≥ 20, Python ≥ 3.11, un serveur Minecraft **1.21.x ou 26.1** (Mineflayer 4.39 s'arrête à 26.1 ; pour
-26.2/26.3 mettez [ViaProxy](https://github.com/ViaVersion/ViaProxy) devant) en `online-mode=false` pour un compte bot
-hors-ligne, ou un compte Microsoft (`MC_AUTH=microsoft`).
+**Il vous faut :** Node 20+, Python 3.11+, Java 21, un serveur Minecraft 1.21.11 en `online-mode=false` (fourni en
+Docker) et une clé de modèle de langage : Anthropic, OpenAI, OpenRouter, ou Ollama en local.
 
 ```bash
-# 0. (optionnel) serveur de test Paper 1.21.11 en Docker
-cd server && docker compose up -d && cd ..
+# 1. le serveur (Paper 1.21.11) et le plugin compagnon
+cd plugin && ./gradlew build && mkdir -p ../server/data/plugins && cp build/libs/emeth-companion-*.jar ../server/data/plugins/
+cd ../server && docker compose up -d
 
-# 1. le corps
-cd body && npm install && npm run build
+# 2. le corps
+cd ../body && npm install && npm run build
 MC_HOST=127.0.0.1 MC_PORT=25565 MC_USERNAME=Emeth BRIDGE_TOKEN=change-me npm start
 
-# 2. l'esprit (autre terminal)
+# 3. l'esprit (autre terminal)
 cd mind && python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
-export ANTHROPIC_API_KEY=...        # ou OPENAI_API_KEY / OPENROUTER_API_KEY, ou Ollama en local
-export EMETH_BRIDGE_TOKEN=change-me
-emeth doctor                        # vérifie fournisseurs + corps
-emeth run                           # l'agent se réveille
+export ANTHROPIC_API_KEY=...  EMETH_BRIDGE_TOKEN=change-me
+emeth doctor && emeth run
 ```
 
-Configuration : `mind/providers.example.yaml` (fournisseurs et modèles par tier `smart`/`fast`/`code`/`vision`),
-`mind/persona.example.yaml` (caractère, voix, valeurs, propriétaire), `.env.example`.
+Rejoignez le serveur, puis tapez `/emeth` ou `/emeth hud`. Le guide complet de la première session est
+[`docs/FIRST_RUN.md`](docs/FIRST_RUN.md). La configuration se règle dans `mind/providers.example.yaml` (modèles par
+niveau `smart`/`fast`/`code`/`vision`), `mind/persona.example.yaml` (caractère, propriétaire) et `.env.example`.
 
-### Lui parler dans le jeu
+<br>
 
-- Mentionnez son nom (`Emeth, viens voir ma maison`) ou chuchotez (`/msg Emeth ...`) : il se réveille et décide.
-- Le joueur `owner` de la persona est reconnu : ses demandes pèsent plus, ses attaques ne déclenchent pas la défense.
-- Il parle quand il a quelque chose à dire : le silence est une réponse valide. Sa « bavardise » se règle dans la persona.
+## Lui parler
 
-### Lui parler depuis Claude Code, Claude Desktop ou Codex (MCP)
+| Où | Comment |
+|---|---|
+| **Dans le chat** | Dites son nom (« Emeth, viens voir ma maison ») ou chuchotez-lui (`/msg Emeth …`). Le propriétaire de la persona compte plus. |
+| **Avec le plugin** | `/emeth tell <conseil>`, `/emeth goal <but>`, ou la plume du menu. |
+| **Depuis Claude Code ou Codex** | `claude mcp add emeth -- emeth mcp`. Les outils `emeth_look`, `emeth_status`, `emeth_tell` et sept autres permettent de voir par ses yeux, de lire sa mémoire et de le conseiller. |
+| **Dans un navigateur** | `http://127.0.0.1:8766/?token=$(cat mind/data/control.token)` ouvre le tableau de bord. |
 
-```bash
-claude mcp add emeth -- emeth mcp        # l'esprit doit tourner (`emeth run`) ; jeton lu dans mind/data/control.token
-```
-Outils : `emeth_status`, `emeth_observe`, `emeth_look` (sa rétine en image), `emeth_memory_search`, `emeth_timeline`,
-`emeth_goals`, `emeth_skills`, puis `emeth_tell` (un conseil qu'il pèsera à sa prochaine pensée), `emeth_suggest_goal`,
-`emeth_say`. Rien ne le télécommande : vous êtes son mentor, pas sa manette (ADR-0006).
+Partout, la règle est la même : vous êtes son mentor, pas sa manette ([ADR-0006](docs/adr/0006-canal-de-controle-et-facade-mcp.md)).
 
-### Regarder dans sa tête (tableau de bord)
-Pendant qu'il tourne : `http://127.0.0.1:8766/?token=$(cat mind/data/control.token)` — santé, pulsions, rétine en
-direct, buts, timeline, mémoire, coûts LLM, et la même boîte « mentor » que l'outil MCP. Une page servie par l'esprit,
-rien à installer.
+<br>
 
-## Comment il pense (une décision)
+## Sûr par construction
 
-1. **Réveil** : chat qui le concerne, blessure, mort, fin d'action, réflexe, tombée de la nuit, ou simple « moment calme ».
-2. **Perception** : observation compacte du corps ; le graphe de monde et les pulsions (sécurité, faim, repos, curiosité,
-   social, maîtrise, ordre) se mettent à jour ; les jalons de l'échelle de survie sont vérifiés programmatiquement.
-3. **Contexte** : `[IDENTITY] [DRIVES] [SENSORY] [AROUND ME] [BLOCKS] [INVENTORY] [BODY] [LAST ACTION] [GOALS]
-   [PREVIOUSLY] [ABOUT PLAYERS] [PLACES I KNOW] [RELEVANT MEMORIES] [TIMELINE] [DECISION]`, chaque bloc avec un budget.
-4. **Décision** : un seul appel LLM en JSON structuré → `{reason, speech, action, goal_update, remember}` ; l'action est
-   validée contre le manifeste du corps (sinon une correction est demandée une fois).
-5. **Exécution** : parole → chat ; `primitive` → le corps ; `skill` → la bibliothèque (réutilisation) ou la synthèse
-   (code → check statique → sandbox → feedback, 4 essais max) ; `wait`/`keep`/`none`.
-6. **Vérification** : le critic programmatique (delta d'inventaire, blocs placés…) puis LLM pour le flou ; les tâches
-   réussies font progresser l'échelle et l'expérience ; les échecs nourrissent la critique du prochain essai.
-7. **Réflexion** : chaque tentative (primitive, skill, chantier) et chaque pensée rejetée alimentent un petit moniteur ;
-   quand un motif d'échec se répète, le bloc `[REFLECTION]` de la pensée suivante le nomme et propose l'alternative.
-8. **Mémoire** : toutes les 24 lignes de timeline, réécriture des blocs `[PREVIOUSLY]`/`[ABOUT PLAYERS]` ; quand il dort,
-   **rêve** ; s'il a un livre vierge, il y écrit son journal du jour.
+- **Il joue à la loyale.** Le corps ne lance aucune commande serveur et ne lit pas les blocs non chargés. Les réflexes
+  n'attaquent jamais un joueur.
+- **Le code qu'il écrit est enfermé.** Une analyse statique passe d'abord (acorn), puis le code tourne dans un worker
+  thread, puis dans une `vm` sans génération de code. Le budget de temps est dur : même une boucle infinie est tuée.
+- **Ses canaux sont protégés.** Le bridge et le canal de contrôle exigent un jeton. Le canal de contrôle n'écoute que
+  sur localhost, et le plugin refuse un hôte distant sauf choix explicite. Les jetons ne sont jamais journalisés.
+- **Le conseil reste un conseil.** Rien de l'extérieur ne commande son corps : un conseil arrive dans sa pensée suivante
+  et il peut le refuser. Un délai entre deux conseils protège son attention et votre facture.
+- **Sa mémoire ne se laisse pas piéger.** Le chat est traité comme une donnée. L'historique importé est marqué « non
+  fiable ». Ses valeurs cœur ne se modifient pas par le chat.
 
-## Arborescence
+<br>
 
-```
-body/      corps TypeScript : src/{perception,vision,motor,actions,skills,bridge}, test/, test/e2e/
-mind/      esprit Python : src/emeth/{bridge,llm,memory,cognition,builder,social,self}, tests/
-protocol/  fixtures JSON partagées, validées par les deux suites de tests
-skills/    bibliothèque de skills JS (versionnée, lue au démarrage, enrichie en jouant)
-server/    docker-compose du serveur Paper de test
-docs/      ARCHITECTURE, RESEARCH (synthèse), INNOVATIONS, ROADMAP, adr/, research/ (rapports bruts)
-```
+## État du projet
+
+| Partie | Tests | Ce qui est vérifié |
+|---|---|---|
+| Corps | 103 unitaires + 10 bout en bout | sur un vrai serveur Minecraft JS : déplacement, minage, escalier relevé et galerie, construction d'un cottage de 71 blocs, approvisionnement, skill en bac à sable, bridge authentifié |
+| Esprit | 63 | routeur de modèles, mémoire, cognition, réflexion, architecte, boucle complète contre un corps simulé, canal de contrôle et MCP |
+| Plugin | 33 unitaires + 28 vérifications bout en bout | sur Paper 1.21.11, avec le vrai corps, le vrai esprit et un second client qui joue l'humain |
+
+**Ce qui reste à prouver :** une longue session sur un vrai serveur avec un vrai modèle de langage. C'est l'étape M1 de la
+[feuille de route](docs/ROADMAP.md). Il faudra y régler le coût par heure, la fréquence des pensées et les seuils de
+fuite. La voix, le récap vidéo, l'imagination et la société de plusieurs agents sont conçus mais pas encore codés
+([`docs/INNOVATIONS.md`](docs/INNOVATIONS.md)).
+
+<br>
 
 ## Développer
 
 ```bash
-cd body && npm test && npm run test:e2e && npm run typecheck     # corps
-cd mind && pytest && ruff check src tests && mypy src/emeth      # esprit
-cd body && npx tsx src/tools/gen-fixtures.ts ../protocol/fixtures # après un changement de protocole
+cd body   && npm test && npm run test:e2e && npm run typecheck          # corps
+cd mind   && pytest && ruff check src tests && mypy src/emeth          # esprit
+cd plugin && ./gradlew build                                           # plugin (compile + JUnit)
+cd mind   && python ../plugin/e2e/live_companion.py                    # plugin de bout en bout sur Paper (≈ 2 min)
+cd body   && npx tsx src/tools/gen-fixtures.ts ../protocol/fixtures    # après un changement du protocole corps ↔ esprit
+cd mind   && python scripts/gen_control_fixtures.py                    # après un changement du statut lu par le plugin
 ```
 
-Les conventions pour les agents de code (Claude Code, Codex) sont dans [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md).
+| Dossier | Contenu |
+|---|---|
+| [`body/`](body) | Le corps : perception, rétine, réflexes, 56 primitives, planificateur d'approvisionnement, bac à sable des skills, bridge |
+| [`mind/`](mind) | L'esprit : routeur de modèles, mémoire, boucle cognitive, réflexion, architecte, identité, canal de contrôle, MCP, tableau de bord |
+| [`plugin/`](plugin) | Le plugin compagnon Paper, et son test de bout en bout |
+| [`protocol/`](protocol) | Les fixtures partagées, validées par les trois suites de tests |
+| [`skills/`](skills) | La bibliothèque de compétences, versionnée et enrichie en jouant |
+| [`server/`](server) | Le serveur Paper de test en Docker |
+| [`docs/`](docs) | Architecture, décisions (ADR), innovations, feuille de route, synthèse de l'état de l'art |
+
+Les agents de code (Claude Code, Codex) suivent [`CLAUDE.md`](CLAUDE.md).
+
+<br>
 
 ## Licence
 
-MIT. Les projets étudiés sont crédités dans `docs/RESEARCH.md` ; rien n'a été copié de ChatClef (AGPL) — réimplémenté
-depuis les idées d'AltoClef (MIT).
+[MIT](LICENSE). Les projets étudiés sont crédités dans [`docs/RESEARCH.md`](docs/RESEARCH.md). Rien n'a été copié de
+ChatClef (AGPL) : les idées d'AltoClef (MIT) ont été réimplémentées. L'interface en jeu s'inspire d'AgentCraft
+(blendi-remade/agentcraft, MIT), sans en reprendre le code. EMETH n'est affilié ni à Mojang, ni à Microsoft, ni à Anthropic.
+
+<div align="center">
+<br>
+<sub>אמת — construit avec Claude.</sub>
+</div>
