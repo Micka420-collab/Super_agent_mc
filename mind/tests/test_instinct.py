@@ -244,7 +244,7 @@ def test_instinct_explores_for_what_resting_steps_lacked(tmp_path):
     obs = sample_observation()
     obs.world.phase = "day"
     obs.self_.food = 20
-    obs.inventory.items = [ItemStack(name="stone_pickaxe", count=1, slot=0)]
+    obs.inventory.items = [ItemStack(name="stone_pickaxe", count=1, slot=0), ItemStack(name="stone_sword", count=1, slot=1)]
     c = ctx(tmp_path, obs)
     c.known_actions.add("explore")
     for mid in ("food", "iron"):
@@ -287,3 +287,16 @@ def test_a_recovery_goal_expires_with_the_drops_and_instinct_walks_back(tmp_path
     planner.save()
     again = Planner(store)
     assert again.current_task() is None and again.goals[-1].status == "abandoned"
+
+
+def test_instinct_replaces_a_lost_sword(tmp_path):
+    obs = sample_observation()
+    obs.world.phase = "day"
+    obs.self_.food = 20
+    obs.inventory.items = [ItemStack(name="stone_pickaxe", count=1, slot=0), ItemStack(name="cobblestone", count=4, slot=1)]
+    c = ctx(tmp_path, obs)
+    c.planner.done_milestones |= {"wood_pickaxe", "stone_tools"}
+    d = instinct(c)
+    assert d.action_name == "get" and d.action_args == {"name": "stone_sword", "count": 1}
+    obs.inventory.items.append(ItemStack(name="stone_sword", count=1, slot=2))
+    assert instinct(c).action_args.get("name") != "stone_sword"

@@ -174,6 +174,11 @@ def _choose(ctx: InstinctContext) -> Decision:
         stone = sum(inv.get(n, 0) for n in ("cobblestone", "cobbled_deepslate", "blackstone"))
         target = "stone_pickaxe" if stone >= 3 else "wooden_pickaxe"
         return Decision(reason=f"instinct: no pickaxe left, making a {target} before anything else", action_type="primitive", action_name="get", action_args={"name": target, "count": 1})
+    if "stone_tools" in ctx.planner.done_milestones and not any(n.endswith("_sword") for n in inv) and can("get"):
+        # lost with the rest at a death: every threat reading said "bare hands" and skeletons won (seen live)
+        stone = sum(inv.get(n, 0) for n in ("cobblestone", "cobbled_deepslate", "blackstone"))
+        target = "stone_sword" if stone >= 1 else "wooden_sword"
+        return Decision(reason=f"instinct: no weapon left, making a {target}", action_type="primitive", action_name="get", action_args={"name": target, "count": 1})
 
     mid = _milestone_id(task)
     if mid:
