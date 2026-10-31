@@ -71,6 +71,8 @@ class Decision:
     raw: dict[str, Any] = field(default_factory=dict)
     response: ChatResponse | None = None
     problems: list[str] = field(default_factory=list)
+    # False for a side action (instinct eating, sheltering, replacing a lost tool): its failure is not the task's
+    for_task: bool = True
 
     @property
     def ok(self) -> bool:

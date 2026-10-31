@@ -139,6 +139,8 @@ class CognitiveLoop:
         self._last_heard_at: float = 0.0
         # since when every decision falls back to instinct (None while the language mind answers)
         self._mind_down_since: float | None = None
+        # whether the running action was chosen for the current task (a side action's failure is not the task's)
+        self._for_task: bool = True
 
     # ---------------------------------------------------------------------------------------
     # lifecycle
@@ -593,6 +595,8 @@ class CognitiveLoop:
             asyncio.create_task(self._remember(d.remember, obs))
         if d.speech:
             await self._say(d.speech, d.whisper_to, obs)
+        if d.action_type in ("primitive", "stored_skill", "skill", "design"):
+            self._for_task = d.for_task
         if d.action_type == "primitive" and d.action_name:
             await self._start_action(d.action_name, d.action_args, obs)
         elif d.action_type == "skill" and d.skill_goal:
@@ -850,6 +854,8 @@ class CognitiveLoop:
                         self.identity.bump(structures_built=1)
                 elif result is not None and not ok and result.errorCode == "INTERRUPTED":
                     pass  # a reflex preempted the attempt (fleeing a skeleton mid-hunt): not a failure of the task itself
+                elif not self._for_task:
+                    pass  # the night shelter failing is not a failed attempt at food (seen live: it cost the food step)
                 elif not ok or verdict.method == "programmatic":
                     self.planner.fail_task(task, verdict.critique or verdict.reasoning)
                     if task.status == "failed":

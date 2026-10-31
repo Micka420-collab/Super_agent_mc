@@ -260,4 +260,8 @@ async def test_a_reflex_interruption_is_not_a_failed_attempt(tmp_path):
     failed = ActionResult(id="2", action="get", ok=False, error="no cow", errorCode="NOT_FOUND", startedAt=0, finishedAt=1)
     await loop._on_result(failed, result_text="get failed")  # noqa: SLF001
     assert task.attempts == 1
+    # a side action (instinct raising its night shelter) failing is not an attempt at the food task
+    loop._for_task = False  # noqa: SLF001
+    await loop._on_result(failed, result_text="emergency_shelter failed")  # noqa: SLF001
+    assert task.attempts == 1
     await body.close()

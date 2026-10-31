@@ -47,6 +47,7 @@ def test_instinct_handles_the_night(tmp_path):
     # the shelter skill in the library → run it by name (no code model)
     d = instinct(ctx(tmp_path, obs, skills={"emergency_shelter"}))
     assert d.action_type == "stored_skill" and d.action_name == "emergency_shelter"
+    assert not d.for_task  # its failure must not cost the current task an attempt
     # a bed in hand beats everything
     obs.inventory.items = [ItemStack(name="red_bed", count=1, slot=0)]
     d = instinct(ctx(tmp_path, obs, skills={"emergency_shelter"}))

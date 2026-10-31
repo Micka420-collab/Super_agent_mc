@@ -138,24 +138,24 @@ def _choose(ctx: InstinctContext) -> Decision:
     reflex_running = obs.action is not None and obs.action.name.startswith("reflex:")
     if threat is not None and threat.recommendation == "flee" and threat.nearest and can("flee") and not reflex_running:
         # the reflex layer runs first; this covers the gap when the mind is woken by the threat before the reflex fires
-        return Decision(reason=f"instinct: the odds are bad ({', '.join(threat.reasons[:3])}), getting away", action_type="primitive", action_name="flee", action_args={"distance": 24})
+        return Decision(reason=f"instinct: the odds are bad ({', '.join(threat.reasons[:3])}), getting away", action_type="primitive", action_name="flee", action_args={"distance": 24}, for_task=False)
 
     if ctx.busy or obs.action is not None:
         return Decision(reason="instinct: my body is busy, letting it finish", action_type="keep")
 
     food = _best_food(inv)
     if s.food <= 8 and food and can("eat"):
-        return Decision(reason=f"instinct: hungry ({s.food}/20), eating {food}", action_type="primitive", action_name="eat", action_args={"name": food})
+        return Decision(reason=f"instinct: hungry ({s.food}/20), eating {food}", action_type="primitive", action_name="eat", action_args={"name": food}, for_task=False)
 
     if obs.world.phase in ("dusk", "night") and not s.isSleeping:
         if _has_bed(inv) and can("sleep"):
-            return Decision(reason="instinct: night is falling and I carry a bed", action_type="primitive", action_name="sleep", action_args={"waitForMorning": True})
+            return Decision(reason="instinct: night is falling and I carry a bed", action_type="primitive", action_name="sleep", action_args={"waitForMorning": True}, for_task=False)
         enc = obs.blocks.enclosure
         if enc is not None and enc.enclosed:
-            return Decision(reason=f"instinct: night, and I am {enc.summary} — waiting for daylight here", action_type="wait", wait_seconds=60, wait_for="daylight")
+            return Decision(reason=f"instinct: night, and I am {enc.summary} — waiting for daylight here", action_type="wait", wait_seconds=60, wait_for="daylight", for_task=False)
         if SHELTER_SKILL in ctx.available_skills:
-            return Decision(reason="instinct: night outside, raising an emergency shelter", action_type="stored_skill", action_name=SHELTER_SKILL, action_args={})
-        return Decision(reason="instinct: night outside and nothing to build with, staying put", action_type="wait", wait_seconds=60, wait_for="daylight")
+            return Decision(reason="instinct: night outside, raising an emergency shelter", action_type="stored_skill", action_name=SHELTER_SKILL, action_args={}, for_task=False)
+        return Decision(reason="instinct: night outside and nothing to build with, staying put", action_type="wait", wait_seconds=60, wait_for="daylight", for_task=False)
 
     task = ctx.planner.current_task()
     wounded_near_threat = s.health <= 10 and threat is not None and threat.nearest is not None
@@ -173,12 +173,12 @@ def _choose(ctx: InstinctContext) -> Decision:
         # a worn-out pickaxe is replaced before anything else that touches stone (seen live: stone broken by hand)
         stone = sum(inv.get(n, 0) for n in ("cobblestone", "cobbled_deepslate", "blackstone"))
         target = "stone_pickaxe" if stone >= 3 else "wooden_pickaxe"
-        return Decision(reason=f"instinct: no pickaxe left, making a {target} before anything else", action_type="primitive", action_name="get", action_args={"name": target, "count": 1})
+        return Decision(reason=f"instinct: no pickaxe left, making a {target} before anything else", action_type="primitive", action_name="get", action_args={"name": target, "count": 1}, for_task=False)
     if "stone_tools" in ctx.planner.done_milestones and not any(n.endswith("_sword") for n in inv) and can("get"):
         # lost with the rest at a death: every threat reading said "bare hands" and skeletons won (seen live)
         stone = sum(inv.get(n, 0) for n in ("cobblestone", "cobbled_deepslate", "blackstone"))
         target = "stone_sword" if stone >= 1 else "wooden_sword"
-        return Decision(reason=f"instinct: no weapon left, making a {target}", action_type="primitive", action_name="get", action_args={"name": target, "count": 1})
+        return Decision(reason=f"instinct: no weapon left, making a {target}", action_type="primitive", action_name="get", action_args={"name": target, "count": 1}, for_task=False)
 
     mid = _milestone_id(task)
     if mid:
@@ -195,6 +195,6 @@ def _choose(ctx: InstinctContext) -> Decision:
     # a task instinct cannot translate (an idea of the language mind) must not freeze it either
     if resting and obs.world.phase not in ("dusk", "night") and can("explore"):
         look = list(dict.fromkeys(name for mid in resting for name in LOOK_FOR.get(mid, [])))
-        return Decision(reason=f"instinct: {', '.join(resting)} failed too often for now — exploring for {', '.join(look[:4]) or 'new ground'}", action_type="primitive", action_name="explore", action_args={"direction": "random", "maxSeconds": EXPLORE_SECONDS, "lookFor": look})
+        return Decision(reason=f"instinct: {', '.join(resting)} failed too often for now — exploring for {', '.join(look[:4]) or 'new ground'}", action_type="primitive", action_name="explore", action_args={"direction": "random", "maxSeconds": EXPLORE_SECONDS, "lookFor": look}, for_task=False)
 
     return Decision(reason="instinct: nothing urgent and no language mind — resting", action_type="wait", wait_seconds=45, wait_for="my mind to come back")
