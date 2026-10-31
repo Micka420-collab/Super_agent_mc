@@ -11,7 +11,7 @@ import { plugin as toolPlugin } from 'mineflayer-tool';
 import type { BodyConfig } from './config.js';
 import { ActivityWatcher, describeEpisode } from './perception/activity.js';
 import { Observer, droppedItemOf } from './perception/observer.js';
-import { buildMovements } from './motor/movement.js';
+import { buildMovements, stopAllMovement } from './motor/movement.js';
 import { ActionRunner } from './actions/runner.js';
 import { ReflexSystem } from './motor/reflexes.js';
 import { classifyEntity } from './perception/entities.js';
@@ -143,8 +143,19 @@ export function createBody(config: BodyConfig): BodyRuntime {
   // also makes the next dig 5× slower — worth seeing in the logs when it happens repeatedly
   let forced = 0;
   let forcedSince = Date.now();
+  let burst: number[] = [];
   bot.on('forcedMove', () => {
     forced += 1;
+    // fighting the server: more than 10 corrections in a second means the pathfinder (or a held key) keeps asking for
+    // a move the server refuses. Stop steering, or physics stays frozen (onGround false, digs five times slower)
+    const now = Date.now();
+    burst = burst.filter((t) => now - t < 1_000);
+    burst.push(now);
+    if (burst.length > 10) {
+      burst = [];
+      stopAllMovement(bot);
+      log.warn({ position: bot.entity.position }, 'the server rejects my moves: stopped steering');
+    }
     if (Date.now() - forcedSince >= 10_000) {
       if (forced >= 3) {
         const pf = (bot as unknown as { pathfinder?: { isMoving?: () => boolean; isMining?: () => boolean; goal?: { constructor?: { name?: string } } | null } }).pathfinder;
