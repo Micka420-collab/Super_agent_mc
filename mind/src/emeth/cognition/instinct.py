@@ -158,9 +158,10 @@ def _choose(ctx: InstinctContext) -> Decision:
         return Decision(reason="instinct: night outside and nothing to build with, staying put", action_type="wait", wait_seconds=60, wait_for="daylight")
 
     task = ctx.planner.current_task()
-    if task is not None and task.target and can("goto") and can("collect_items"):
+    wounded_near_threat = s.health <= 10 and threat is not None and threat.nearest is not None
+    if task is not None and task.target and can("goto") and can("collect_items") and not wounded_near_threat:
         # going back for dropped items before anything else: they despawn in five minutes (seen live: it crafted a
-        # pickaxe first and let its things vanish)
+        # pickaxe first and let its things vanish) — but not wounded into whatever killed it (seen live: 7 HP, skeleton)
         x, y, z = task.target
         p = s.position
         if (p.x - x) ** 2 + (p.y - y) ** 2 + (p.z - z) ** 2 > 9:

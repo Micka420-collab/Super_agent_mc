@@ -271,6 +271,11 @@ class CognitiveLoop:
                     x, y, z = float(pos["x"]), float(pos["y"]), float(pos["z"])
                     self.graph.mark_place("where I died", x, y, z, kind="place", notes="my items dropped here")
                     title = f"{RECOVER_PREFIX} where I died ({x:.0f}, {y:.0f}, {z:.0f})"
+                    for g in self.planner.goals:
+                        # what lies at an older death spot is not what it carried just now (seen live: it walked back
+                        # to the first spot and died on the way)
+                        if g.status == "active" and g.title.startswith(RECOVER_PREFIX) and g.title != title:
+                            g.status = "abandoned"
                     if not any(g.title == title and g.status == "active" for g in self.planner.goals):
                         goal = self.planner.add_goal(title, [Task(description=f"go back to ({x:.0f}, {y:.0f}, {z:.0f}) within 5 minutes and pick up my dropped items (collect_items), carefully — whatever killed me may still be there", kind="explore", max_attempts=2, target=[x, y, z])], why="items despawn five minutes after death", priority=2, source="self")
                         goal.expires_at = goal.created_at + DROP_LIFETIME_S
@@ -833,6 +838,10 @@ class CognitiveLoop:
                 after = self.body.latest_observation
             if after is not None:
                 verdict = await self.critic.verify(task, self._task_before, after, result_text, self.planner.flags)
+                if task.target and result is not None and getattr(result, "action", "") == "collect_items":
+                    # picked up on the spot: whatever is not in hand now is gone (seen live: it kept walking back
+                    # to an empty place, into the skeleton that had killed it)
+                    verdict.success = True
                 if verdict.success:
                     self.planner.complete_task(task)
                     self.timeline.add("achievement", f"task done: {task.description} ({verdict.reasoning[:80]})", importance=0.8)

@@ -192,6 +192,10 @@ async def test_death_sets_a_recovery_goal_and_marks_the_place(tmp_path):
     # dying again at the same spot does not stack goals
     loop._handle_event(BodyEvent(event="death", ts=0, payload={"position": {"x": 100, "y": 40, "z": -20}, "ts": 0}))  # noqa: SLF001
     assert len([g for g in loop.planner.goals if g.status == "active" and g.title.startswith("Recover")]) == 1
+    # dying somewhere else replaces the older recovery: the latest drops are what it carried
+    loop._handle_event(BodyEvent(event="death", ts=0, payload={"position": {"x": 7, "y": 62, "z": -700}, "ts": 0}))  # noqa: SLF001
+    active = [g for g in loop.planner.goals if g.status == "active" and g.title.startswith("Recover")]
+    assert len(active) == 1 and "(7, 62, -700)" in active[0].title
     await asyncio.sleep(0)  # let the respawn task start
     await body.close()
 

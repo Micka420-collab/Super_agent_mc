@@ -273,6 +273,13 @@ def test_a_recovery_goal_expires_with_the_drops_and_instinct_walks_back(tmp_path
     planner.done_milestones.add("wood_pickaxe")  # no pickaxe left after dying: the drops still come first
     d = instinct(c)
     assert d.action_name == "goto" and (d.action_args["x"], d.action_args["z"]) == (24.0, -650.0)
+    from emeth.protocol import ThreatState
+
+    # wounded with an archer in sight: not back into whatever killed it
+    obs.self_.health = 7
+    obs.entities.threat = ThreatState.model_validate({"danger": 0.6, "recommendation": "retreat", "reasons": ["skeleton 12m"], "nearest": {"name": "skeleton", "distance": 12}})
+    assert instinct(c).action_name != "goto"
+    obs.self_.health = 20
     obs.self_.position.x, obs.self_.position.y, obs.self_.position.z = 24.0, 62.0, -649.0
     assert instinct(c).action_name == "collect_items"
     # a goal saved before expiry existed gets the five minutes back from its creation time
