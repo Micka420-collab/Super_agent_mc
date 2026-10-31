@@ -46,6 +46,11 @@ export function fleeDistanceFrom(name: string | undefined, base: number): number
   return name && RANGED_MOBS.has(name) ? Math.max(base, RANGED_FLEE_DISTANCE) : base;
 }
 
+/** A fight in progress is abandoned when the body's own reading of the odds says to run. */
+export function shouldBreakOff(odds: ThreatAssessment | null, fleeAtDanger: number): boolean {
+  return !!odds && odds.recommendation === 'flee' && odds.danger >= fleeAtDanger;
+}
+
 export class ReflexSystem {
   config: ReflexConfig = ReflexConfigSchema.parse({});
   private active: { name: string; priority: number; running: Running } | null = null;
@@ -264,10 +269,17 @@ export class ReflexSystem {
             }
             void pvp.attack(threat.entity).catch(() => undefined);
             const deadline = Date.now() + 20_000;
+            let lastOdds = Date.now();
             while (Date.now() < deadline && !running.controller.signal.aborted) {
               const e = bot.entities[threat.entity.id];
               if (!e || (e.health !== undefined && e.health <= 0) || distance(bot.entity.position, e.position) > cfg.defendRange + 6) break;
               if (bot.health <= cfg.fleeAtHealth) break;
+              // only one reflex runs at a time, so the flee rule cannot see the odds turn mid-fight: read them here
+              // (seen live: bare hands against a drowned, danger 1, fought from 20 down to 1.7 and died fleeing)
+              if (Date.now() - lastOdds >= 1_000) {
+                lastOdds = Date.now();
+                if (shouldBreakOff(this.assess(), cfg.fleeAtDanger)) break;
+              }
               await new Promise((r) => setTimeout(r, 200));
             }
             await pvp.stop();
