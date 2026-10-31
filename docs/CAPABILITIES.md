@@ -105,6 +105,31 @@ ensuite atteint le plafond de 1 $, puis il est resté 2 h 30 sur l'écran de mor
 Vérifié en jeu, en mode instinct et sans aucune dépense : réapparition, descente de l'arbre, bûches puis pioche en
 bois en 10 s, et 0 correction.
 
+## 31 oct., jour — huit heures d'immobilité, puis l'instinct qui vit seul
+
+Le plafond de 1 $ était atteint depuis 04:10 : toute la journée s'est jouée en mode instinct, à 0 $.
+
+- **Échelle verrouillée à vie.** Nourriture, abri et fer avaient échoué trois fois chacun ; un jalon raté trois fois
+  était banni pour toujours, et tous les suivants dépendaient de l'un d'eux. L'agent a « attendu son esprit » huit
+  heures. Un jalon raté se repose maintenant 20 min, puis 40, 80… (4 h au plus), et revient ; de jour, l'instinct
+  explore en cherchant ce qui lui a manqué (animaux, minerai).
+- **Mémoire inondée.** ~230 épisodes identiques par heure (note → plan → attente). Un cycle court se replie
+  désormais sur ses lignes.
+- **Objectif de récupération éternel.** « Récupérer mes affaires » d'une mort de 05:32 restait actif à 12:00 et
+  bloquait la pile. Il expire avec les objets (5 min) ; l'instinct sait y retourner (`goto` puis `collect_items`),
+  le fait avant de refaire une pioche, s'arrête une fois sur place, cède à la mort la plus récente et n'y retourne
+  pas blessé avec un hostile en vue.
+- **Échecs mal attribués.** Une fuite devant un squelette et l'abri de nuit raté comptaient comme des essais de la
+  tâche nourriture (« gave up on: food »). Les interruptions par réflexe et les actions annexes de l'instinct ne
+  coûtent plus d'essai.
+- **Morts au combat.** Fuir un archer à 16 blocs le laissait à portée (20 → 0 PV en cinq fuites) : 28 blocs au moins
+  devant un monstre à distance. Un combat à mains nues contre un noyé continuait jusqu'à 1,7 PV parce qu'un seul
+  réflexe tourne à la fois : le combat relit maintenant le rapport de force chaque seconde. L'épée perdue est refaite
+  comme la pioche.
+
+Vérifié en jeu, en mode instinct : reprise du jalon nourriture, deux vaches chassées, retour sur le lieu de la mort
+et objets ramassés, objectifs de récupération terminés puis expirés.
+
 ## Défauts trouvés en vrai et corrigés pendant la session 1
 
 1. **Arguments vides** : en sortie structurée, un objet sans propriétés ne peut valoir que `{}`. Les décisions et
@@ -129,3 +154,5 @@ bois en 10 s, et 0 correction.
 - Trouver des animaux loin de la base (moutons, vaches) : `explore` voit loin mais ne poursuit pas.
 - Le plugin compilé sans Gradle : Gradle 8.14 ne tourne pas sur Java 25 (passer au wrapper 9.x).
 - Session longue (plusieurs heures) : dérive de la mémoire, coût réel avec le rêve.
+- La nuit dans l'eau : l'abri d'urgence ne sait pas sortir de l'eau ni bâtir sur l'eau (noyés).
+- Un fournisseur local (Ollama) pour que l'esprit de langage survive au plafond payé.
