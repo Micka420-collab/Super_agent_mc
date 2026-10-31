@@ -80,6 +80,31 @@ Signalé par le joueur. En remontant la piste, on a trouvé six défauts, dont u
 
 Résultat vérifié en jeu : il a creusé à la main de 22 m à 5 m de l'établi, puis a refait sa pioche en pierre.
 
+## Nuit du 31 oct. — six morts, puis la vraie cause des corrections
+
+Sans personne connecté, EMETH est mort six fois en une heure de jeu (creeper, araignées, zombies, noyade). Il a
+ensuite atteint le plafond de 1 $, puis il est resté 2 h 30 sur l'écran de mort. Quatre défauts expliquent la soirée.
+
+- **Le serveur refuse un joueur collé à un mur (défaut majeur).** Avec mineflayer, sur Paper 1.21.11, s'appuyer
+  contre n'importe quel bloc (roche, feuilles) provoque environ 18 corrections de position par seconde. La physique
+  du client pose la boîte de collision exactement sur la face du bloc, et le serveur ne l'accepte pas. Reproduit
+  avec un bot sonde sans EMETH ni plugin : 85 à 95 corrections en 5 s contre un mur, et un pathfinder bloqué 20 s
+  au sommet d'un sapin. Avec une marge de 0,0001 bloc sur la demi-largeur : 0 correction, et le même trajet prend
+  8 s. C'était la vraie cause des tunnels figés et des minages lents ; le correctif de la veille (le but laissé au
+  pathfinder) ne traitait qu'une partie du problème. Le chien de garde ne coupe plus une marche en cours, car il
+  annulait les crafts (« goal changed »).
+- **Réapparition perdue.** Un réflexe de fuite encore actif au moment de la mort rendait `respawn` « occupé ».
+  L'esprit essayait une seule fois, sans rien journaliser. Désormais, la mort interrompt tout, `respawn` passe même
+  quand une action tourne, l'esprit réessaie, et l'instinct relève un corps mort en premier.
+- **Instinct en boucle.** Sans modèle de langage, il a lancé 894 fois un abri d'urgence impossible. Il renonce
+  maintenant après trois échecs identiques d'affilée, et il ne double plus une fuite déjà en cours.
+- **Mémoire glissante.** 45 réécritures sur 52 étaient tronquées à 4096 tokens et relancées à chaque décision, en
+  parallèle : 0,14 $ perdus. Il n'y a plus qu'une réécriture à la fois, une pause après un échec, une sortie
+  bornée et des blocs plus courts.
+
+Vérifié en jeu, en mode instinct et sans aucune dépense : réapparition, descente de l'arbre, bûches puis pioche en
+bois en 10 s, et 0 correction.
+
 ## Défauts trouvés en vrai et corrigés pendant la session 1
 
 1. **Arguments vides** : en sortie structurée, un objet sans propriétés ne peut valoir que `{}`. Les décisions et
