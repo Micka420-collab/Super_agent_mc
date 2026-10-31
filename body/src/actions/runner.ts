@@ -126,9 +126,13 @@ export class ActionRunner {
       const result = await def.run(this.makeContext(tmp), args);
       return { id: tmp.id, action: 'stop', ok: true, result, startedAt: tmp.startedAt, finishedAt: Date.now() };
     }
+    // a dead body cannot finish anything: `respawn` replaces whatever still holds the hands (seen live: a flee reflex
+    // that outlived the death made the respawn BUSY, and the body stayed on the death screen for hours)
+    if (def.name === 'respawn' && this.current) this.interrupt('respawning', Number.POSITIVE_INFINITY);
+    if (def.name === 'respawn' && this.current) this.current = null;
     const running = this.acquire(def.name, 'action', priority);
     const ctx = this.makeContext(running);
-    const timeoutMs = req.timeoutMs ?? (def.longRunning ? 180_000 : 30_000);
+    const timeoutMs = req.timeoutMs ?? def.defaultTimeoutMs ?? (def.longRunning ? 180_000 : 30_000);
     let result: ActionResult;
     try {
       const value = await raceAbort(def.run(ctx, args), running.controller.signal, {

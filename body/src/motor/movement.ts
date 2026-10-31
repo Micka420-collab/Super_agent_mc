@@ -9,6 +9,7 @@ import type { Vec3Like } from '../protocol.js';
 import { BodyError, ErrorCodes } from '../protocol.js';
 import { raceAbort, sleep, waitFor } from '../util/async.js';
 import { distance } from '../util/geometry.js';
+import { assessEnclosure, solidLookup } from './enclosure.js';
 
 const { Movements, goals } = pathfinderPkg;
 
@@ -22,6 +23,7 @@ export interface MovementProfile {
   protectedBlocks: string[];
   scaffoldingBlocks: string[];
 }
+
 
 export const DEFAULT_PROFILE: MovementProfile = {
   canDig: true,
@@ -53,6 +55,13 @@ export function buildMovements(bot: Bot, profile: MovementProfile = DEFAULT_PROF
     const def = bot.registry.blocksByName[name];
     if (def) m.blocksCantBreak.add(def.id);
   }
+  // a player does not punch through stone: blocks that need a tool I do not carry are walls, not doors
+  // (seen live: a worn-out pickaxe, then a path dug through stone by hand, 7 s a block, nothing dropping)
+  const carried = new Set(bot.inventory.items().map((i) => i.type));
+  for (const def of Object.values(bot.registry.blocksByName) as Array<{ id: number; harvestTools?: Record<string, boolean> }>) {
+    const tools = def.harvestTools ? Object.keys(def.harvestTools).map(Number) : null;
+    if (tools && tools.length && !tools.some((id) => carried.has(id))) m.blocksCantBreak.add(def.id);
+  }
   // mineflayer-pathfinder types declare scafoldingBlocks as number[] (item ids)
   m.scafoldingBlocks = profile.scaffoldingBlocks
     .map((n) => bot.registry.itemsByName[n]?.id)
@@ -77,25 +86,63 @@ function mapPathError(err: unknown): BodyError {
 }
 
 /** Walk until within `range` blocks of the target position. */
+/**
+ * Is a walk still getting somewhere? Stalled when the best distance to the goal has not improved by `minGain`
+ * blocks for `windowMs`. Seen live: `goto` spent its whole 120 s budget without moving a block out of a sealed
+ * shelter, and the mind learnt nothing from the timeout.
+ */
+export class ProgressWatch {
+  private best = Number.POSITIVE_INFINITY;
+  private bestAt = 0;
+  constructor(private readonly windowMs = 25_000, private readonly minGain = 1.5) {}
+
+  /** Feed one sample; true once the walk has stalled. */
+  sample(now: number, dist: number): boolean {
+    if (dist < this.best - this.minGain || this.best === Number.POSITIVE_INFINITY) {
+      this.best = dist;
+      this.bestAt = now;
+      return false;
+    }
+    return now - this.bestAt >= this.windowMs;
+  }
+}
+
 export async function goTo(
   bot: Bot,
   target: Vec3Like,
   range = 1,
   signal?: AbortSignal,
-  opts: { timeoutMs?: number; profile?: MovementProfile } = {},
+  opts: { timeoutMs?: number; profile?: MovementProfile; stallMs?: number } = {},
 ): Promise<void> {
   if (distance(bot.entity.position, target) <= range + 0.3) return;
   // movements are sticky on the pathfinder: always state the profile so a careful build never leaks into the next walk
   bot.pathfinder.setMovements(buildMovements(bot, opts.profile ?? DEFAULT_PROFILE));
   const goal = new goals.GoalNear(target.x, target.y, target.z, range);
+  const start = distance(bot.entity.position, target);
+  const watch = new ProgressWatch(opts.stallMs ?? 25_000);
+  let ticker: NodeJS.Timeout | undefined;
+  const stalled = new Promise<never>((_, reject) => {
+    ticker = setInterval(() => {
+      const left = distance(bot.entity.position, target);
+      if (!watch.sample(Date.now(), left)) return;
+      clearInterval(ticker);
+      haltPathfinder(bot);
+      const shut = assessEnclosure(solidLookup(bot), bot.entity.position).enclosed;
+      const hint = shut ? ' — I am sealed in: dig my way out first (`ascend` to climb out, or `tunnel` towards it)' : Math.abs(target.y - bot.entity.position.y) > 6 ? ' — the height difference is the problem: `ascend`/`descend` first' : ' — try a closer waypoint or another way round';
+      reject(new BodyError(ErrorCodes.NO_PATH, `not getting any closer (${Math.round(left)} m left of ${Math.round(start)})${hint}`, { distanceLeft: Math.round(left), startDistance: Math.round(start), enclosed: shut }));
+    }, 1000);
+  });
   try {
-    await raceAbort(bot.pathfinder.goto(goal), signal, {
+    await raceAbort(Promise.race([bot.pathfinder.goto(goal), stalled]), signal, {
       timeoutMs: opts.timeoutMs ?? 60_000,
-      onCancel: () => bot.pathfinder.stop(),
-      timeoutMessage: 'took too long to reach the destination',
+      onCancel: () => haltPathfinder(bot),
+      timeoutMessage: `took too long to reach the destination (it was ${Math.round(start)} m away)`,
     });
   } catch (err) {
-    throw mapPathError(err);
+    throw err instanceof BodyError ? err : mapPathError(err);
+  } finally {
+    clearInterval(ticker);
+    releaseGoal(bot, goal);
   }
 }
 
@@ -105,7 +152,7 @@ export async function goToBlock(bot: Bot, pos: Vec3Like, signal?: AbortSignal, t
   bot.pathfinder.setMovements(buildMovements(bot, DEFAULT_PROFILE));
   const goal = new goals.GoalGetToBlock(pos.x, pos.y, pos.z);
   try {
-    await raceAbort(bot.pathfinder.goto(goal), signal, { timeoutMs, onCancel: () => bot.pathfinder.stop() });
+    await raceAbort(bot.pathfinder.goto(goal), signal, { timeoutMs, onCancel: () => haltPathfinder(bot) }).finally(() => releaseGoal(bot, goal));
   } catch (err) {
     // fall back to a looser goal — GoalGetToBlock can be impossible for blocks embedded in walls
     const e = err as { name?: string };
@@ -180,6 +227,30 @@ export async function holdControl(
     await sleep(ms, signal);
   } finally {
     bot.setControlState(control, false);
+  }
+}
+
+/**
+ * Stop the pathfinder for real. `pathfinder.stop()` only asks it to stop once it reaches a safe spot, which a stuck
+ * bot never does: the goal stayed set after the action had ended, the pathfinder kept steering and digging under the
+ * next action, and the server corrected the bot's position every tick (~20/s, seen live). That froze its physics with
+ * onGround false and made every dig five times slower.
+ */
+export function haltPathfinder(bot: Bot): void {
+  try {
+    bot.pathfinder.setGoal(null);
+    bot.pathfinder.stop();
+  } catch {
+    /* pathfinder may not be loaded yet */
+  }
+}
+
+/** Whatever way a walk ends, it must not leave its goal behind. */
+function releaseGoal(bot: Bot, goal: unknown): void {
+  try {
+    if (bot.pathfinder.goal === goal) bot.pathfinder.setGoal(null);
+  } catch {
+    /* ignore */
   }
 }
 

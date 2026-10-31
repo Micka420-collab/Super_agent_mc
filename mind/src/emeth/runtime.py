@@ -55,7 +55,7 @@ class Mind:
     async def start(self) -> CognitiveLoop:
         await self.body.connect()
         if self.settings.control_enabled:
-            self.control = ControlServer(ControlAPI(self), self.settings.control_host, self.settings.control_port, self.settings.control_token)
+            self.control = ControlServer(ControlAPI(self), self.settings.control_host, self.settings.control_port, self.settings.resolve_control_token())
             await self.control.start()
             self.control.write_token(self.settings.control_token_path())
         await self.skills.sync_from_disk()
@@ -100,7 +100,7 @@ def build_mind(settings: Settings, *, router: LLMRouter | None = None, transport
     persona = persona or load_persona(settings.persona_path)
     store = MemoryStore(settings.data_dir / "memory.sqlite")
     if router is None:
-        router = LLMRouter.from_configs(load_providers(settings.providers_path), tier_preferences=settings.tier_preferences, max_requests_per_minute=settings.loop.max_requests_per_minute, log_path=settings.data_dir / "logs" / "decisions.jsonl")
+        router = LLMRouter.from_configs(load_providers(settings.providers_path), tier_preferences=settings.tier_preferences, max_requests_per_minute=settings.loop.max_requests_per_minute, log_path=settings.data_dir / "logs" / "decisions.jsonl", max_usd=settings.max_usd, spend_path=settings.data_dir / "logs" / "llm_spend.json")
     embedder = Embedder(router)
     wiki = Wiki(settings.data_dir / "wiki", store, embedder)
     timeline = Timeline(store)

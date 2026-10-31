@@ -32,6 +32,9 @@ describe('action registry', () => {
     const goto = getAction('goto');
     expect(parseArgs(goto, { x: 1, y: 64, z: 2 })).toMatchObject({ x: 1, y: 64, z: 2, range: 1 });
     expect(() => parseArgs(goto, { x: 'a' })).toThrow(/invalid arguments for goto/);
+    // null for an optional argument = left out (language models do this); null for a required one still fails
+    expect(parseArgs(goto, { x: 1, y: 64, z: 2, range: null })).toMatchObject({ x: 1, y: 64, z: 2, range: 1 });
+    expect(() => parseArgs(goto, { x: null, y: 64, z: 2 })).toThrow(/invalid arguments for goto/);
     try {
       getAction('teleport');
     } catch (err) {

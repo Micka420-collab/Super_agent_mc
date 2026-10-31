@@ -7,7 +7,8 @@ import { findPlacementSpotNear, placeBlockAt } from '../motor/placing.js';
 import { countItem, findItem, inventorySummary, normalizeName, resolveItemNames } from '../motor/items.js';
 import { raceAbort, sleep, throwIfAborted, waitFor } from '../util/async.js';
 import { distance } from '../util/geometry.js';
-import { inventoryDelta } from './mining.js';
+import { inventoryDelta, reachBlock } from './mining.js';
+import { SMELTING, UTILITY_SEARCH_RADIUS } from '../motor/procurement.js';
 import { defineAction, type ActionContext } from './registry.js';
 
 /** How many items one unit of fuel smelts (vanilla values). */
@@ -97,13 +98,37 @@ export function describeRecipes(ctx: ActionContext, name: string, count = 1, tab
 }
 
 /** Find a crafting table nearby, or place one from the inventory (crafting it from planks if possible). */
-export async function ensureCraftingTable(ctx: ActionContext, maxDistance = 32): Promise<Block> {
+function canMakeTable(bot: ActionContext['bot']): boolean {
+  const items = bot.inventory.items();
+  return items.some((i) => i.name.endsWith('_planks') && i.count >= 4) || items.some((i) => i.name.endsWith('_log'));
+}
+
+export async function ensureCraftingTable(ctx: ActionContext, maxDistance = UTILITY_SEARCH_RADIUS): Promise<Block> {
   const bot = ctx.bot;
   const tableId = bot.registry.blocksByName['crafting_table']?.id;
   if (tableId === undefined) throw new BodyError(ErrorCodes.INTERNAL, 'no crafting_table in registry');
   const existing = bot.findBlock({ matching: tableId, maxDistance });
   if (existing) {
-    await goToBlock(bot, existing.position, ctx.signal);
+    try {
+      await goToBlock(bot, existing.position, ctx.signal, 20_000);
+      return existing;
+    } catch (err) {
+      if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+      // close as the crow flies but not by foot (behind walls, the other end of a tunnel): a player puts down a new
+      // one rather than walking for a minute (seen live: `craft furnace` timed out walking to the old table)
+      ctx.progress(`the crafting table at ${existing.position} is out of reach: setting up one here`);
+    }
+  }
+  if (!findItem(bot, 'crafting_table') && existing && !canMakeTable(bot)) {
+    // no way to make a new one: the old table is worth the long walk after all — and, walled in without a pickaxe,
+    // worth breaking the way out by hand (seen live: sealed behind its own cobblestone after the pickaxe wore out)
+    try {
+      await goToBlock(bot, existing.position, ctx.signal, 30_000);
+    } catch (err) {
+      if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+      ctx.progress('no way to the crafting table on foot: digging my way there by hand');
+      await reachBlock(ctx, existing, { byHand: true, walkFirst: false }); // the walk was just tried
+    }
     return existing;
   }
   if (!findItem(bot, 'crafting_table')) {
@@ -249,14 +274,17 @@ defineAction({
   description: 'Smelt/cook items in a furnace (finds or places one, picks fuel from the inventory, waits, takes the output).',
   longRunning: true,
   schema: z.object({
-    name: z.string().describe('input item, e.g. "raw_iron", "beef", "sand"'),
+    name: z.string().describe('input item, e.g. "raw_iron", "beef", "sand" — or the wanted output ("iron_ingot", "cooked_beef"), which is read as its input'),
     count: z.number().int().min(1).max(64).default(1),
     fuel: z.string().optional().describe('fuel item to use; auto-selected when omitted'),
   }),
   async run(ctx, a) {
     const bot = ctx.bot;
-    const input = findItem(bot, a.name);
-    if (!input) throw new BodyError(ErrorCodes.MISSING_ITEM, `I don't have any ${a.name} to smelt`);
+    // the wanted output is a natural way to say it ("smelt iron_ingot"): read it as its input (seen live)
+    const wanted = normalizeName(a.name);
+    const inputName = !findItem(bot, wanted) && SMELTING[wanted] ? SMELTING[wanted] : a.name;
+    const input = findItem(bot, inputName);
+    if (!input) throw new BodyError(ErrorCodes.MISSING_ITEM, inputName === a.name ? `I don't have any ${a.name} to smelt` : `${a.name} is smelted from ${inputName}, and I have none`);
     const count = Math.min(a.count, input.count);
     const fuel = chooseFuel(ctx, count, a.fuel);
     if (!fuel) throw new BodyError(ErrorCodes.MISSING_ITEM, 'no fuel in inventory (coal, charcoal, planks, logs...)');
@@ -271,7 +299,19 @@ defineAction({
       furnace = bot.blockAt(spot);
       if (!furnace || !furnaceIds.includes(furnace.type)) throw new BodyError(ErrorCodes.INTERNAL, 'furnace placement failed');
     }
-    await goToBlock(bot, furnace.position, ctx.signal);
+    try {
+      await goToBlock(bot, furnace.position, ctx.signal, 20_000);
+    } catch (err) {
+      if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+      if (!findItem(bot, 'furnace')) throw err;
+      // the known furnace is out of reach: use the one I carry
+      const spot = findPlacementSpotNear(bot, 3);
+      if (!spot) throw new BodyError(ErrorCodes.NOT_FOUND, 'the furnace is out of reach and there is no free spot to place mine');
+      await placeBlockAt(bot, 'furnace', spot, ctx.signal);
+      const placed = bot.blockAt(spot);
+      if (!placed || !furnaceIds.includes(placed.type)) throw new BodyError(ErrorCodes.INTERNAL, 'furnace placement failed');
+      furnace = placed;
+    }
     const before = inventorySummary(bot);
     const win = await raceAbort(bot.openFurnace(furnace), ctx.signal, { timeoutMs: 10_000 });
     try {

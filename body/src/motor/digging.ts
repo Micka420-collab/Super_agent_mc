@@ -67,6 +67,20 @@ export function stairStep(origin: Vec3Like, dir: Cardinal, i: number): Course {
   return { clear: [{ x, y, z }, { x, y: y + 1, z }, { x, y: y + 2, z }], feet: { x, y, z }, floor: { x, y: y - 1, z } };
 }
 
+/**
+ * Cells of the i-th step of a staircase going UP (out of a pit or a sealed shelter): the new feet and head cells,
+ * plus the cell above the current head so there is room to jump. The floor is the untouched block under the step.
+ */
+export function stairUpStep(origin: Vec3Like, dir: Cardinal, i: number): Course {
+  const [dx, dz] = CARDINALS[dir];
+  const x = Math.floor(origin.x) + dx * i;
+  const y = Math.floor(origin.y) + i;
+  const z = Math.floor(origin.z) + dz * i;
+  const px = x - dx;
+  const pz = z - dz;
+  return { clear: [{ x, y, z }, { x, y: y + 1, z }, { x: px, y: y + 1, z: pz }], feet: { x, y, z }, floor: { x, y: y - 1, z } };
+}
+
 /** Cells of the i-th step of a 1×2 horizontal tunnel. */
 export function tunnelStep(origin: Vec3Like, dir: Cardinal, i: number): Course {
   const [dx, dz] = CARDINALS[dir];
@@ -136,4 +150,31 @@ export function summariseOres(ores: NamedCell[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const o of ores) out[o.name] = (out[o.name] ?? 0) + 1;
   return out;
+}
+
+/**
+ * Natural terrain a player may dig through to reach something: never a block someone placed (planks, bricks,
+ * cobblestone walls, glass…). Ores count as terrain.
+ */
+const TERRAIN = new Set(['stone', 'deepslate', 'dirt', 'grass_block', 'coarse_dirt', 'rooted_dirt', 'podzol', 'mycelium', 'gravel', 'sand', 'red_sand', 'clay', 'granite', 'diorite', 'andesite', 'tuff', 'calcite', 'dripstone_block', 'netherrack', 'blackstone', 'basalt', 'smooth_basalt', 'soul_sand', 'soul_soil', 'end_stone', 'snow_block', 'mud', 'moss_block', 'terracotta', 'sandstone', 'red_sandstone']);
+
+export function isTerrain(name: string): boolean {
+  return TERRAIN.has(name) || name.endsWith('_ore') || name.endsWith('_terracotta') || name === 'ancient_debris';
+}
+
+export type ApproachStep = { kind: 'tunnel' | 'up' | 'down'; direction: Cardinal };
+
+/**
+ * The next 1-block step of a corridor dug from `feet` towards `target`: along the larger horizontal axis, climbing
+ * or descending one block per step while the target is more than one block above or below. Null when the target
+ * is straight above or below (there is no horizontal way to go).
+ */
+export function nextApproachStep(feet: Vec3Like, target: Vec3Like): ApproachStep | null {
+  const dx = Math.floor(target.x) - Math.floor(feet.x);
+  const dz = Math.floor(target.z) - Math.floor(feet.z);
+  const dy = Math.floor(target.y) - Math.floor(feet.y);
+  if (dx === 0 && dz === 0) return null;
+  const direction: Cardinal = Math.abs(dx) >= Math.abs(dz) ? (dx > 0 ? 'east' : 'west') : dz > 0 ? 'south' : 'north';
+  const kind = dy > 1 ? 'up' : dy < -1 ? 'down' : 'tunnel';
+  return { kind, direction };
 }

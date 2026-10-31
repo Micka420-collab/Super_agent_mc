@@ -117,7 +117,7 @@ class FakeWorld:
             return ok({"ok": not problems, "problems": problems, "apiCalls": []})
         if method == "skill.run":
             self.skill_runs.append(params)
-            base = {"id": "s1", "name": params.get("name"), "ok": True, "result": {"done": True}, "logs": [], "trace": [{"t": 1, "call": "observe", "ok": True, "ms": 2}], "startedAt": time.time() * 1000 - 100, "finishedAt": time.time() * 1000}
+            base = {"id": "s1", "name": params.get("name"), "ok": True, "result": {"done": True}, "logs": [], "trace": [{"t": 1, "call": "observe", "ok": True, "ms": 2}, {"t": 3, "call": "mine", "ok": True, "ms": 40}], "startedAt": time.time() * 1000 - 100, "finishedAt": time.time() * 1000}
             if self.skill_response:
                 base.update(self.skill_response)
             return ok(base)

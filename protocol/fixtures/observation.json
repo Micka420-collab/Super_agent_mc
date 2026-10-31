@@ -52,7 +52,10 @@
     "isRaining": false,
     "isThundering": false,
     "lightLevel": 15,
-    "skyLight": 15
+    "skyLight": 15,
+    "online": [
+      "Steve"
+    ]
   },
   "inventory": {
     "items": [
@@ -213,6 +216,12 @@
       "oak_leaves": 30,
       "chest": 1,
       "crafting_table": 1
+    },
+    "enclosure": {
+      "enclosed": false,
+      "cells": 160,
+      "roofed": false,
+      "summary": "exposed: open to the outside, monsters can walk or fall to you"
     }
   },
   "vision": {

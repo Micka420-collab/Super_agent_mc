@@ -50,3 +50,31 @@ async def test_body_client_round_trip_and_events():
     assert client.latest_observation is not None
     assert client.events.empty()
     await client.close()
+
+
+def test_a_program_that_reports_its_own_failure_did_not_succeed():
+    from emeth.bridge.client import judge_skill_result
+    from emeth.protocol import SkillRunResult
+
+    acted = [{"t": 0, "call": "place", "ok": True, "ms": 5}]
+    base = {"id": "1", "name": "shelter", "logs": [], "trace": acted, "startedAt": 0, "finishedAt": 1}
+    bad = judge_skill_result(SkillRunResult.model_validate({**base, "ok": True, "result": {"sealed": False, "placed": 3}}))
+    assert not bad.ok and bad.errorCode == "SELF_REPORTED_FAILURE" and "sealed=false" in (bad.error or "")
+    good = judge_skill_result(SkillRunResult.model_validate({**base, "ok": True, "result": {"sealed": True}}))
+    assert good.ok
+    plain = judge_skill_result(SkillRunResult.model_validate({**base, "ok": True, "result": 12}))
+    assert plain.ok
+
+
+def test_a_program_that_changed_nothing_did_not_succeed():
+    from emeth.bridge.client import judge_skill_result
+    from emeth.protocol import SkillRunResult
+
+    def run(trace):
+        return judge_skill_result(SkillRunResult.model_validate({"id": "1", "name": "escape", "ok": True, "result": {"steps": []}, "logs": [], "trace": trace, "startedAt": 0, "finishedAt": 1}))
+
+    looked = run([{"t": 0, "call": "observe", "ok": True, "ms": 1}, {"t": 1, "call": "block_at", "ok": True, "ms": 1}])
+    assert not looked.ok and looked.errorCode == "NO_EFFECT" and "only looked" in (looked.error or "")
+    failed = run([{"t": 0, "call": "observe", "ok": True, "ms": 1}, {"t": 1, "call": "dig", "ok": False, "ms": 1, "error": "MISSING_TOOL"}])
+    assert not failed.ok and "dig" in (failed.error or "")
+    assert run([{"t": 0, "call": "dig", "ok": True, "ms": 900}]).ok

@@ -32,11 +32,14 @@ log = logging.getLogger(__name__)
 ROLLING_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "previously": {"type": "string", "description": "Full replacement text, two sections: 'Shared past' and 'Recent developments'. Max 3500 characters."},
-        "about_players": {"type": "string", "description": "Full replacement text about the players I know: facts they told me, how they treat me, promises. Max 1500 characters."},
+        "previously": {"type": "string", "description": "Full replacement text, two sections: 'Shared past' and 'Recent developments'. Max 2500 characters."},
+        "about_players": {"type": "string", "description": "Full replacement text about the players I know: facts they told me, how they treat me, promises. Max 1000 characters."},
     },
     "required": ["previously", "about_players"],
 }
+
+# both blocks together are ~3500 characters: well under 2000 tokens, the rest is headroom
+ROLLING_MAX_TOKENS = 2500
 
 DREAM_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -83,6 +86,7 @@ class Consolidator:
         self.skills = skills
         self.identity = identity
         self.language = language
+        self._rolling_busy = False
 
     # ---- rolling memory ---------------------------------------------------------------------
     def rolling(self) -> tuple[str, str]:
@@ -90,24 +94,39 @@ class Consolidator:
 
     async def rewrite_rolling(self) -> tuple[str, str]:
         previously, about = self.rolling()
+        # one rewrite at a time: think() fires it on every decision while the counter is over the threshold
+        if self._rolling_busy:
+            return previously, about
+        self._rolling_busy = True
+        try:
+            return await self._rewrite_rolling(previously, about)
+        finally:
+            # also after a failure: wait for the next batch of events instead of retrying on every decision
+            self.timeline.mark_rewritten()
+            self._rolling_busy = False
+
+    async def _rewrite_rolling(self, previously: str, about: str) -> tuple[str, str]:
         transcript = self.timeline.render(chat_lines=40, chat_minutes=120, other_lines=80, max_chars=14_000)
         prompt = (
             f"{MEMORY_GUIDE}\n\nCurrent [PREVIOUSLY] block:\n{previously or '(empty)'}\n\nCurrent [ABOUT PLAYERS] block:\n{about or '(empty)'}\n\n"
             f"New timeline since the last rewrite (seq | time | kind | text):\n{transcript}\n\n"
-            "Rewrite both blocks as full replacements, merging old and new, dropping stale detail. Respect the character limits."
+            "Rewrite both blocks as full replacements, merging old and new, dropping stale detail. Respect the character limits: "
+            "be terse, keep only what will matter tomorrow."
         )
-        req = ChatRequest(messages=[Message(role="system", content=f"You are the memory writer of a Minecraft player named {self.identity.name}. Write in {self.language}."), Message(role="user", content=prompt)], tier="fast", temperature=0.2, json_schema=ROLLING_SCHEMA, json_schema_name="rolling_memory", purpose="memory.rolling")
+        req = ChatRequest(messages=[Message(role="system", content=f"You are the memory writer of a Minecraft player named {self.identity.name}. Write in {self.language}."), Message(role="user", content=prompt)], tier="fast", temperature=0.2, max_tokens=ROLLING_MAX_TOKENS, json_schema=ROLLING_SCHEMA, json_schema_name="rolling_memory", purpose="memory.rolling")
         try:
             resp = await self.router.chat(req)
         except Exception as exc:  # noqa: BLE001
             log.warning("rolling rewrite failed: %s", exc)
             return previously, about
         data = resp.json_data or {}
-        new_prev = str(data.get("previously") or previously)[:4500]
-        new_about = str(data.get("about_players") or about)[:1800]
+        if resp.finish_reason == "length" or not data:
+            log.warning("rolling rewrite unusable (finish_reason=%s): kept the old blocks", resp.finish_reason)
+            return previously, about
+        new_prev = str(data.get("previously") or previously)[:3000]
+        new_about = str(data.get("about_players") or about)[:1200]
         self.store.set("rolling.previously", new_prev)
         self.store.set("rolling.about_players", new_about)
-        self.timeline.mark_rewritten()
         return new_prev, new_about
 
     # ---- dreaming ---------------------------------------------------------------------------

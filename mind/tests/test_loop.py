@@ -192,5 +192,76 @@ async def test_death_sets_a_recovery_goal_and_marks_the_place(tmp_path):
     # dying again at the same spot does not stack goals
     loop._handle_event(BodyEvent(event="death", ts=0, payload={"position": {"x": 100, "y": 40, "z": -20}, "ts": 0}))  # noqa: SLF001
     assert len([g for g in loop.planner.goals if g.status == "active" and g.title.startswith("Recover")]) == 1
+    # dying somewhere else replaces the older recovery: the latest drops are what it carried
+    loop._handle_event(BodyEvent(event="death", ts=0, payload={"position": {"x": 7, "y": 62, "z": -700}, "ts": 0}))  # noqa: SLF001
+    active = [g for g in loop.planner.goals if g.status == "active" and g.title.startswith("Recover")]
+    assert len(active) == 1 and "(7, 62, -700)" in active[0].title
     await asyncio.sleep(0)  # let the respawn task start
+    await body.close()
+
+
+async def test_no_public_speech_to_an_empty_world(tmp_path):
+    world = FakeWorld()
+    loop, body, _ = await make_loop(tmp_path, world)
+    obs = await body.observe("compact")
+    obs.entities.players = []
+    obs.world.online = []
+    await loop._say("Hmm, personne ici.", None, obs)  # noqa: SLF001
+    assert world.chats == [] and any("(to myself)" in e.text for e in loop.timeline.entries)
+    obs.world.online = ["Micka"]  # connected but far away: the chat still reaches him
+    await loop._say("Salut Micka !", None, obs)  # noqa: SLF001
+    assert world.chats == [("Salut Micka !", None)]
+    world.chats.clear()
+    obs.world.online = []
+    await loop._say("Psst", "Steve", obs)  # noqa: SLF001 — a whisper has a listener
+    loop._last_heard_at = __import__("time").time()  # noqa: SLF001 — someone spoke in chat a moment ago
+    await loop._say("Je t'entends.", None, obs)  # noqa: SLF001
+    assert world.chats == [("Psst", "Steve"), ("Je t'entends.", None)]
+    await body.close()
+
+
+async def test_skill_synthesis_retries_a_truncated_answer(tmp_path):
+    from emeth.llm.mock import MockProvider as _Mock
+
+    class Truncating(_Mock):
+        async def chat(self, request):  # type: ignore[no-untyped-def]
+            resp = await super().chat(request)
+            if request.purpose == "skill.synthesis.1":
+                resp.finish_reason = "length"
+                resp.json_data = {"plan": "1. find"}
+            return resp
+
+    world = FakeWorld()
+    world.add_inventory("oak_log", 6)
+    loop, body, provider = await make_loop(tmp_path, world)
+    trunc = Truncating("mock", script=scripted_brain)
+    assert loop.synthesizer is not None
+    loop.synthesizer.router = LLMRouter([trunc])
+    obs = await body.observe("compact")
+    out = await loop.synthesizer.accomplish("collect 6 oak logs", obs)
+    assert out.ok and out.attempts == 2
+    assert "cut off" in trunc.requests[1].messages[-1].content
+    assert "step by step" not in trunc.requests[0].messages[0].content.lower()
+    await body.close()
+
+
+async def test_a_reflex_interruption_is_not_a_failed_attempt(tmp_path):
+    # seen live: fleeing a skeleton mid-hunt cost the food milestone one of its four attempts
+    from emeth.cognition.planner import Task
+    from emeth.protocol import ActionResult
+
+    world = FakeWorld()
+    loop, body, _ = await make_loop(tmp_path, world)
+    loop.planner.add_goal("food", [Task(description="Get food", kind="gather", success={"food_points": 32}, source="curriculum:food")], source="curriculum")
+    task = loop.planner.current_task()
+    interrupted = ActionResult(id="1", action="get", ok=False, error="reflex:flee", errorCode="INTERRUPTED", startedAt=0, finishedAt=1)
+    await loop._on_result(interrupted, result_text="get interrupted by reflex:flee")  # noqa: SLF001
+    assert task.attempts == 0 and task.status == "active"
+    failed = ActionResult(id="2", action="get", ok=False, error="no cow", errorCode="NOT_FOUND", startedAt=0, finishedAt=1)
+    await loop._on_result(failed, result_text="get failed")  # noqa: SLF001
+    assert task.attempts == 1
+    # a side action (instinct raising its night shelter) failing is not an attempt at the food task
+    loop._for_task = False  # noqa: SLF001
+    await loop._on_result(failed, result_text="emergency_shelter failed")  # noqa: SLF001
+    assert task.attempts == 1
     await body.close()

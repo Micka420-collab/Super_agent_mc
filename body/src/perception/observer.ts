@@ -22,6 +22,7 @@ import type {
 import { bearingTo, distance, relativeDirection, round, roundVec } from '../util/geometry.js';
 import { classifyEntity } from './entities.js';
 import { assessThreat } from '../motor/threat.js';
+import { assessEnclosure, solidLookup } from '../motor/enclosure.js';
 import { scanFov, type FovScanOptions, type FovScanResult, type RayHit, type Raycaster } from './fov.js';
 
 export interface ObserverOptions {
@@ -184,6 +185,7 @@ export class Observer {
     const self = this.selfState();
     const world = this.worldState();
     const entities = this.entitiesState(detail);
+    const blocks = this.blocksState(scan, detail);
     entities.threat = assessThreat({
       hostiles: entities.hostiles.map((h) => ({ name: h.name, distance: h.distance, visible: h.visible })),
       health: self.health,
@@ -192,6 +194,7 @@ export class Observer {
       offhandItem: self.offhandItem?.name ?? null,
       phase: world.phase,
       skyLight: world.skyLight,
+      enclosed: blocks.enclosure?.enclosed ?? false,
     });
     const observation: Observation = {
       ts: Date.now(),
@@ -201,7 +204,7 @@ export class Observer {
       world,
       inventory: this.inventoryState(),
       entities,
-      blocks: this.blocksState(scan, detail),
+      blocks,
       vision: {
         visible: scan.visible.slice(0, detail === 'full' ? 400 : 80),
         horizon: scan.horizon,
@@ -276,6 +279,7 @@ export class Observer {
       lightLevel: feet?.light ?? 0,
       skyLight: feet?.skyLight ?? 0,
       moonPhase: (bot.time as unknown as { moonPhase?: number }).moonPhase,
+      online: Object.keys(bot.players ?? {}).filter((name) => name !== bot.username).sort(),
     };
   }
 
@@ -385,6 +389,7 @@ export class Observer {
       facing,
       notable,
       nearbyCounts,
+      enclosure: assessEnclosure(solidLookup(bot), pos),
     };
   }
 

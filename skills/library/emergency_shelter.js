@@ -1,7 +1,7 @@
 /** @skill emergency_shelter
  * description: Night is falling or monsters are near: encloses the agent in a 1x3 hut made of whatever cheap blocks it carries (dirt, cobblestone, planks...), lights it with a torch if available, and returns what was used. Dig first if nothing is in the inventory. args: {material?: string}
  * tags: survival, shelter, seed
- * version: 1
+ * version: 2
  */
 async function main(api, args) {
   const CHEAP = ['cobblestone', 'dirt', 'cobbled_deepslate', 'netherrack', 'oak_planks', 'spruce_planks', 'birch_planks', 'stone', 'andesite', 'diorite', 'granite', 'sand'];
@@ -31,6 +31,10 @@ async function main(api, args) {
   }
   cells.push({ name: material, x, y: y + 3, z });
   const result = await api.build({ blocks: cells, partial: true });
+  if (result.placed === 0 && result.failureCount > 0) {
+    // seen live: "succeeded" with 0 placed and 4 failed, in the water at night — an empty shelter is not a shelter
+    throw Object.assign(new Error(`could not place any of the shelter blocks (${result.failureCount} failed)`), { code: 'NO_PATH' });
+  }
   let lit = false;
   if ((inv['torch'] || 0) > 0) {
     try {

@@ -27,6 +27,8 @@ export interface ActionDef<S extends z.ZodType = z.ZodType> {
   description: string;
   schema: S;
   longRunning: boolean;
+  /** default time budget when the caller gives none (long-running default 180 s) */
+  defaultTimeoutMs?: number;
   run: (ctx: ActionContext, args: z.infer<S>) => Promise<unknown>;
 }
 
@@ -49,7 +51,12 @@ export function listActions(): ActionDef[] {
 }
 
 export function parseArgs<S extends z.ZodType>(def: ActionDef<S>, args: unknown): z.infer<S> {
-  const parsed = def.schema.safeParse(args ?? {});
+  let parsed = def.schema.safeParse(args ?? {});
+  if (!parsed.success && args && typeof args === 'object' && !Array.isArray(args) && Object.values(args).some((v) => v === null)) {
+    // language models write `"fromId": null` for an argument they mean to leave out: null on a field the schema
+    // does not accept as null means "omitted" (seen live: `flee` refused on `fromId: null`)
+    parsed = def.schema.safeParse(Object.fromEntries(Object.entries(args).filter(([, v]) => v !== null)));
+  }
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
     throw new BodyError(ErrorCodes.BAD_REQUEST, `invalid arguments for ${def.name}: ${issues}`);

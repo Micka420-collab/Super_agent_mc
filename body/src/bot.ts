@@ -11,13 +11,16 @@ import { plugin as toolPlugin } from 'mineflayer-tool';
 import type { BodyConfig } from './config.js';
 import { ActivityWatcher, describeEpisode } from './perception/activity.js';
 import { Observer, droppedItemOf } from './perception/observer.js';
-import { buildMovements } from './motor/movement.js';
+import { buildMovements, stopAllMovement } from './motor/movement.js';
 import { ActionRunner } from './actions/runner.js';
 import { ReflexSystem } from './motor/reflexes.js';
 import { classifyEntity } from './perception/entities.js';
 import type { EventName } from './protocol.js';
 import { getLogger } from './util/logger.js';
 import { distance, roundVec } from './util/geometry.js';
+
+/** The vanilla 0.3, plus the margin the server needs to accept a position against a wall. */
+export const PLAYER_HALF_WIDTH = 0.3001;
 
 const { pathfinder } = pathfinderPkg;
 
@@ -65,6 +68,13 @@ export function createBody(config: BodyConfig): BodyRuntime {
   bot.loadPlugin(toolPlugin);
   bot.loadPlugin(autoEatPlugin);
   bot.loadPlugin(armorManager);
+  // Paper 1.21.11 refuses a position flush against a wall: prismarine-physics puts the hitbox exactly on the block
+  // face and the server sends us back every tick (~18 corrections/s, frozen physics, digs 5× slower, walks that never
+  // leave a wall or a tree top). A 0.0001 margin is enough: measured 85-95 corrections in 5 s against a wall → 0
+  bot.once('login', () => {
+    const physics = (bot as unknown as { physics?: { playerHalfWidth: number } }).physics;
+    if (physics) physics.playerHalfWidth = PLAYER_HALF_WIDTH;
+  });
 
   const observer = new Observer(bot, {
     honestPerception: config.MC_HONEST_PERCEPTION,
@@ -117,6 +127,9 @@ export function createBody(config: BodyConfig): BodyRuntime {
     emit('hurt', { health: bot.health, source: src });
   });
   bot.on('death', () => {
+    // nothing the body was doing survives a death: release the hands and the keys
+    runner.interrupt('died', Number.POSITIVE_INFINITY);
+    stopAllMovement(bot);
     observer.pushEvent('death', 'I died');
     emit('death', { position: bot.entity ? roundVec(bot.entity.position) : null, ts: Date.now() });
   });
@@ -138,6 +151,37 @@ export function createBody(config: BodyConfig): BodyRuntime {
   bot.on('entityGone', (entity) => {
     if (entity.type !== 'player') return;
     emit('entity.gone', { id: entity.id, username: entity.username, name: entity.name });
+  });
+  // the server moved us (teleport or anti-cheat correction): mineflayer then zeroes the velocity and onGround, which
+  // also makes the next dig 5× slower — worth seeing in the logs when it happens repeatedly
+  let forced = 0;
+  let forcedSince = Date.now();
+  let burst: number[] = [];
+  bot.on('forcedMove', () => {
+    forced += 1;
+    // fighting the server: more than 10 corrections in a second means the pathfinder (or a held key) keeps asking for
+    // a move the server refuses. Stop steering, or physics stays frozen (onGround false, digs five times slower)
+    const now = Date.now();
+    burst = burst.filter((t) => now - t < 1_000);
+    burst.push(now);
+    if (burst.length > 10) {
+      burst = [];
+      // only a goal left over from a finished action is cut: halting a live walk aborted crafts ("goal changed") and
+      // did not stop the corrections either (seen live: 20 per second with no goal and no key held)
+      if (!runner.isBusy()) {
+        stopAllMovement(bot);
+        log.warn({ position: bot.entity.position }, 'the server rejects my moves: stopped a leftover walk');
+      }
+    }
+    if (Date.now() - forcedSince >= 10_000) {
+      if (forced >= 3) {
+        const pf = (bot as unknown as { pathfinder?: { isMoving?: () => boolean; isMining?: () => boolean; goal?: { constructor?: { name?: string } } | null } }).pathfinder;
+        const controls = Object.entries(bot.controlState).filter(([, on]) => on).map(([k]) => k);
+        log.warn({ corrections: forced, position: bot.entity.position, pathfinding: pf?.isMoving?.() ?? false, mining: pf?.isMining?.() ?? false, goal: pf?.goal?.constructor?.name ?? null, controls, digging: !!(bot as unknown as { targetDigBlock?: unknown }).targetDigBlock }, 'server keeps correcting my position');
+      }
+      forced = 0;
+      forcedSince = Date.now();
+    }
   });
   bot.on('playerJoined', (player) => {
     if (player.username === bot.username) return;

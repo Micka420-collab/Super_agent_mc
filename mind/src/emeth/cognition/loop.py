@@ -35,7 +35,7 @@ from emeth.cognition.decide import (
 )
 from emeth.cognition.drives import Drives
 from emeth.cognition.instinct import InstinctContext, instinct
-from emeth.cognition.planner import Planner, Task
+from emeth.cognition.planner import DROP_LIFETIME_S, RECOVER_PREFIX, Planner, Task
 from emeth.cognition.reflection import Reflection, signature_of
 from emeth.cognition.skills import SkillOutcome, SkillSynthesizer
 from emeth.config import LoopConfig
@@ -53,6 +53,9 @@ from emeth.self.identity import Identity
 from emeth.social.persona import Persona
 
 log = logging.getLogger(__name__)
+
+AUDIENCE_MEMORY_S = 300.0
+WAIT_BREAKERS = ("chat", "whisper", "hurt", "death", "threat", "daybreak", "nightfall", "mentor", "player joined")
 
 COORD_HINT = re.compile(r"-?\d{1,5}\s*[, ]\s*-?\d{1,3}\s*[, ]\s*-?\d{1,5}")
 
@@ -132,6 +135,12 @@ class CognitiveLoop:
         self._last_speech: str = ""
         # words from outside the game (the owner through the MCP façade / dashboard), consumed by the next thought
         self._mentor_inbox: list[tuple[str, str]] = []
+        # last time a player spoke in chat: talking to an empty world is noise (seen live: "Hmm, …" at every thought)
+        self._last_heard_at: float = 0.0
+        # since when every decision falls back to instinct (None while the language mind answers)
+        self._mind_down_since: float | None = None
+        # whether the running action was chosen for the current task (a side action's failure is not the task's)
+        self._for_task: bool = True
 
     # ---------------------------------------------------------------------------------------
     # lifecycle
@@ -152,13 +161,21 @@ class CognitiveLoop:
                     reasons = self._drain_reasons()
                 except TimeoutError:
                     reasons = ["quiet moment" if self._action_task else "idle body"]
-                if time.time() < self._wait_until and not any(r.startswith(("chat", "whisper", "hurt", "death", "threat")) for r in reasons):
+                # daybreak/nightfall end a wait too: a wait "for dawn" that outlives the dawn is how it sat out a whole
+                # morning in its shelter (seen live)
+                if time.time() < self._wait_until and not any(r.startswith(WAIT_BREAKERS) for r in reasons):
                     continue  # honouring a deliberate wait
+                self._wait_until = 0.0  # whatever comes next replaces the wait (a new `wait` sets it again)
                 try:
                     await self.think(", ".join(reasons))
+                    if self._mind_down_since is not None:
+                        self.timeline.add("note", f"my language mind is back after {int((time.time() - self._mind_down_since) // 60)} min of instinct", importance=0.5)
+                        self._mind_down_since = None
                 except LLMError as exc:
                     self.stats.errors += 1
                     log.error("decision failed: %s", exc)
+                    if self._mind_down_since is None:
+                        self._mind_down_since = time.time()
                     self.timeline.add("note", f"my language mind is unavailable ({str(exc)[:100]}) — instinct takes over")
                     try:
                         await self.act_on_instinct(", ".join(reasons))
@@ -220,6 +237,7 @@ class CognitiveLoop:
         kind = ev.event
         if kind == "chat":
             speaker, text = str(p.get("from", "?")), str(p.get("text", ""))
+            self._last_heard_at = time.time()
             self.timeline.add("chat_in", f"{speaker}: {text}", actors=[speaker])
             self.social.on_chat(speaker, text)
             self.drives.on_event("chat_in")
@@ -228,6 +246,7 @@ class CognitiveLoop:
             return None, 0
         if kind == "whisper":
             speaker, text = str(p.get("from", "?")), str(p.get("text", ""))
+            self._last_heard_at = time.time()
             self.timeline.add("whisper_in", f"{speaker} (private): {text}", actors=[speaker])
             self.social.on_chat(speaker, text)
             self.drives.on_event("whisper_in")
@@ -253,9 +272,16 @@ class CognitiveLoop:
                 try:
                     x, y, z = float(pos["x"]), float(pos["y"]), float(pos["z"])
                     self.graph.mark_place("where I died", x, y, z, kind="place", notes="my items dropped here")
-                    title = f"Recover my belongings where I died ({x:.0f}, {y:.0f}, {z:.0f})"
+                    title = f"{RECOVER_PREFIX} where I died ({x:.0f}, {y:.0f}, {z:.0f})"
+                    for g in self.planner.goals:
+                        # what lies at an older death spot is not what it carried just now (seen live: it walked back
+                        # to the first spot and died on the way)
+                        if g.status == "active" and g.title.startswith(RECOVER_PREFIX) and g.title != title:
+                            g.status = "abandoned"
                     if not any(g.title == title and g.status == "active" for g in self.planner.goals):
-                        self.planner.add_goal(title, [Task(description=f"go back to ({x:.0f}, {y:.0f}, {z:.0f}) within 5 minutes and pick up my dropped items (collect_items), carefully — whatever killed me may still be there", kind="explore", max_attempts=2)], why="items despawn five minutes after death", priority=2, source="self")
+                        goal = self.planner.add_goal(title, [Task(description=f"go back to ({x:.0f}, {y:.0f}, {z:.0f}) within 5 minutes and pick up my dropped items (collect_items), carefully — whatever killed me may still be there", kind="explore", max_attempts=2, target=[x, y, z])], why="items despawn five minutes after death", priority=2, source="self")
+                        goal.expires_at = goal.created_at + DROP_LIFETIME_S
+                        self.planner.save()
                         self.timeline.add("plan", "new goal: recover my belongings where I died", importance=0.6)
                 except (KeyError, TypeError, ValueError):
                     pass
@@ -375,9 +401,17 @@ class CognitiveLoop:
         return ""
 
     async def _respawn_later(self) -> None:
-        await asyncio.sleep(3)
-        with contextlib.suppress(Exception):
-            await self.body.act("respawn")
+        # retried: a single silent attempt once left the body on the death screen for hours
+        for attempt in range(10):
+            await asyncio.sleep(3 if attempt == 0 else 10)
+            try:
+                res = await self.body.act("respawn")
+            except Exception as exc:  # noqa: BLE001
+                log.warning("respawn attempt %d failed: %s", attempt + 1, exc)
+                continue
+            if res.ok:
+                return
+            log.warning("respawn attempt %d refused: %s %s", attempt + 1, res.errorCode, res.error)
 
     async def _dream(self, day: int) -> None:
         try:
@@ -428,7 +462,7 @@ class CognitiveLoop:
             self._ensure_goal(obs)
             library = self.synthesizer.library if self.synthesizer else None
             available = {r.name for r in library.records()} if library else set()
-            decision = instinct(InstinctContext(obs=obs, planner=self.planner, busy=bool(self._action_task and not self._action_task.done()), available_skills=available, known_actions=self.body.action_names))
+            decision = instinct(InstinctContext(obs=obs, planner=self.planner, busy=bool(self._action_task and not self._action_task.done()), available_skills=available, known_actions=self.body.action_names, failure_streak=self.reflection.same_failure_streak()))
             self.stats.instinct_decisions += 1
             await self._execute(decision, obs)
             return decision
@@ -561,6 +595,8 @@ class CognitiveLoop:
             asyncio.create_task(self._remember(d.remember, obs))
         if d.speech:
             await self._say(d.speech, d.whisper_to, obs)
+        if d.action_type in ("primitive", "stored_skill", "skill", "design"):
+            self._for_task = d.for_task
         if d.action_type == "primitive" and d.action_name:
             await self._start_action(d.action_name, d.action_args, obs)
         elif d.action_type == "skill" and d.skill_goal:
@@ -605,7 +641,16 @@ class CognitiveLoop:
         except Exception as exc:  # noqa: BLE001
             log.debug("remember failed: %s", exc)
 
+    def _audience(self, to: str | None, obs: Observation) -> bool:
+        """Someone to talk to: a whisper target, another player connected (chat is server-wide), one in sight, or a
+        chat heard in the last minutes. Seen live: a greeting to the owner swallowed because he was not in sight."""
+        return bool(to) or bool(obs.world.online) or bool(obs.entities.players) or time.time() - self._last_heard_at < AUDIENCE_MEMORY_S
+
     async def _say(self, text: str, to: str | None, obs: Observation) -> None:
+        if not self._audience(to, obs):
+            # nobody around: the words stay a thought (dashboard/plugin still show them as the last speech)
+            self.timeline.add("note", f"(to myself) {text}"[:200], importance=0.1)
+            return
         try:
             await self.body.chat(text, to=to)
         except BodyError as exc:
@@ -797,12 +842,20 @@ class CognitiveLoop:
                 after = self.body.latest_observation
             if after is not None:
                 verdict = await self.critic.verify(task, self._task_before, after, result_text, self.planner.flags)
+                if task.target and result is not None and getattr(result, "action", "") == "collect_items":
+                    # picked up on the spot: whatever is not in hand now is gone (seen live: it kept walking back
+                    # to an empty place, into the skeleton that had killed it)
+                    verdict.success = True
                 if verdict.success:
                     self.planner.complete_task(task)
                     self.timeline.add("achievement", f"task done: {task.description} ({verdict.reasoning[:80]})", importance=0.8)
                     self.drives.on_event("achievement")
                     if task.kind == "build":
                         self.identity.bump(structures_built=1)
+                elif result is not None and not ok and result.errorCode == "INTERRUPTED":
+                    pass  # a reflex preempted the attempt (fleeing a skeleton mid-hunt): not a failure of the task itself
+                elif not self._for_task:
+                    pass  # the night shelter failing is not a failed attempt at food (seen live: it cost the food step)
                 elif not ok or verdict.method == "programmatic":
                     self.planner.fail_task(task, verdict.critique or verdict.reasoning)
                     if task.status == "failed":

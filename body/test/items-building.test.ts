@@ -119,3 +119,13 @@ describe('placement safety', () => {
     expect(hitboxIntersectsCell({ x: 10.5, y: 5, z: 9.5 }, { x: 10, y: 7, z: 9 })).toBe(false);
   });
 });
+
+describe('own blocks', () => {
+  it('remembers what I placed, so I may dig back through my own walls and never through someone else\'s', async () => {
+    const { isOwnBlock, rememberOwnBlock } = await import('../src/motor/placing.js');
+    expect(isOwnBlock({ x: 10, y: 64, z: -3 })).toBe(false);
+    rememberOwnBlock({ x: 10.4, y: 64, z: -2.6 });
+    expect(isOwnBlock({ x: 10, y: 64, z: -3 })).toBe(true);
+    expect(isOwnBlock({ x: 11, y: 64, z: -3 })).toBe(false);
+  });
+});

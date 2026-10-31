@@ -47,6 +47,7 @@ def test_instinct_handles_the_night(tmp_path):
     # the shelter skill in the library → run it by name (no code model)
     d = instinct(ctx(tmp_path, obs, skills={"emergency_shelter"}))
     assert d.action_type == "stored_skill" and d.action_name == "emergency_shelter"
+    assert not d.for_task  # its failure must not cost the current task an attempt
     # a bed in hand beats everything
     obs.inventory.items = [ItemStack(name="red_bed", count=1, slot=0)]
     d = instinct(ctx(tmp_path, obs, skills={"emergency_shelter"}))
@@ -126,3 +127,177 @@ def test_instinct_is_silent_and_never_fights(tmp_path):
     for milestone in (None, "wood", "diamond", "bed"):
         d = instinct(ctx(tmp_path, obs, milestone=milestone))
         assert d.speech is None and d.action_name not in {"attack", "flee"}
+
+
+def test_instinct_trusts_the_measured_enclosure_at_night(tmp_path):
+    from emeth.memory.context import render_sensory
+    from emeth.protocol import Enclosure
+
+    obs = sample_observation()
+    obs.world.phase = "night"
+    obs.self_.food = 20
+    obs.inventory.items = []
+    obs.blocks.enclosure = Enclosure(enclosed=True, cells=2, roofed=True, summary="sealed in: 2 open cells, closed on every side")
+    d = instinct(ctx(tmp_path, obs, skills={"emergency_shelter"}))
+    assert d.action_type == "wait" and "sealed" in d.reason  # already safe: no second shelter
+    assert "Shelter (measured now): sealed in" in render_sensory(obs)
+    obs.blocks.enclosure = Enclosure(enclosed=False, cells=160, roofed=False, summary="exposed: open to the outside, monsters can walk or fall to you")
+    d = instinct(ctx(tmp_path, obs, skills={"emergency_shelter"}))
+    assert d.action_name == "emergency_shelter"  # a shelter that was only believed in does not count
+    assert "Shelter (measured now): NONE" in render_sensory(obs)
+
+
+def test_dawn_reads_as_the_end_of_the_night_and_ends_waits():
+    from emeth.cognition.loop import WAIT_BREAKERS
+    from emeth.memory.context import render_sensory
+
+    obs = sample_observation()
+    obs.world.phase = "dawn"
+    obs.world.timeOfDay = 23500
+    assert "the night is over" in render_sensory(obs)
+    assert "daybreak".startswith(WAIT_BREAKERS) and "nightfall".startswith(WAIT_BREAKERS)
+    # advice from the owner (plugin, dashboard, MCP) promises to wake the next thought: a wait must not swallow it
+    assert "mentor:plugin".startswith(WAIT_BREAKERS) and "player joined: Micka".startswith(WAIT_BREAKERS)
+
+
+def test_instinct_replaces_a_lost_pickaxe_first(tmp_path):
+    obs = sample_observation()
+    obs.world.phase = "day"
+    obs.self_.food = 20
+    obs.inventory.items = [ItemStack(name="cobblestone", count=64, slot=0), ItemStack(name="stick", count=2, slot=1)]
+    c = ctx(tmp_path, obs)
+    c.planner.done_milestones.add("wood_pickaxe")  # it had one: this is a worn-out pickaxe, not a newborn
+    d = instinct(c)
+    assert d.action_name == "get" and d.action_args == {"name": "stone_pickaxe", "count": 1}
+    obs.inventory.items = [ItemStack(name="stone_pickaxe", count=1, slot=0)]
+    assert instinct(c).action_args.get("name") != "stone_pickaxe"
+
+
+def test_tool_wear_and_missing_pickaxe_are_in_the_context():
+    from emeth.memory.context import render_inventory
+
+    obs = sample_observation()
+    obs.self_.heldItem = None
+    obs.inventory.items = [ItemStack(name="stone_pickaxe", count=1, slot=0, durability=9, maxDurability=131)]
+    assert "almost worn out (9 uses left)" in render_inventory(obs)
+    obs.inventory.items = [ItemStack(name="cobblestone", count=64, slot=0), ItemStack(name="stick", count=2, slot=1)]
+    text = render_inventory(obs)
+    assert "NO PICKAXE" in text and "you carry what a stone_pickaxe needs" in text and "`get stone_pickaxe`" in text
+
+
+def test_instinct_respawns_a_dead_body_first(tmp_path):
+    obs = sample_observation()
+    obs.self_.health = 0
+    c = ctx(tmp_path, obs, busy=True)  # a reflex that outlived the death still holds the hands
+    c.known_actions.add("respawn")
+    d = instinct(c)
+    assert d.action_type == "primitive" and d.action_name == "respawn"
+
+
+def test_instinct_stops_repeating_a_call_that_keeps_failing(tmp_path):
+    obs = sample_observation()
+    obs.world.phase = "night"
+    obs.blocks.enclosure = None
+    c = ctx(tmp_path, obs, skills={"emergency_shelter"})
+    assert instinct(c).action_name == "emergency_shelter"
+    c.failure_streak = ("stored_skill: emergency_shelter", "NOT_FOUND", 3)
+    d = instinct(c)
+    assert d.action_type == "wait" and "3 times" in d.reason
+    # another call failing does not block this one
+    c.failure_streak = ("primitive: get", "NOT_FOUND", 5)
+    assert instinct(c).action_name == "emergency_shelter"
+
+
+def test_instinct_leaves_a_running_flee_reflex_alone(tmp_path):
+    from emeth.protocol import CurrentAction, ThreatState
+
+    obs = sample_observation()
+    obs.entities.threat = ThreatState.model_validate({"danger": 0.9, "recommendation": "flee", "reasons": ["creeper 8m"], "nearest": {"name": "creeper", "distance": 8}})
+    obs.action = CurrentAction(id="r1", name="reflex:flee", startedAt=0)
+    c = ctx(tmp_path, obs)
+    c.known_actions.add("flee")
+    assert instinct(c).action_type == "keep"
+
+
+def test_a_failed_milestone_rests_then_comes_back(tmp_path):
+    # seen live: food, shelter and iron failed three times each and the whole ladder stood still for eight hours
+    planner = Planner(MemoryStore(tmp_path / "rest.sqlite"))
+    planner.done_milestones |= {"wood", "planks", "table", "sticks", "wood_pickaxe", "stone", "stone_tools", "coal", "torches", "furnace"}
+    for _ in range(3):
+        planner.record_milestone_failure(Task(description="food", source="curriculum:food"))
+    t0 = planner.failed_at["food"]
+    assert planner.resting("food", t0 + 60)
+    nxt = planner.next_milestone(t0 + 60)
+    assert nxt is not None and nxt[0] != "food"
+    assert planner.next_milestone(t0 + 20 * 60 + 1)[0] == "food"
+    # one more failure doubles the rest, and it survives a restart
+    planner.record_milestone_failure(Task(description="food", source="curriculum:food"))
+    again = Planner(MemoryStore(tmp_path / "rest.sqlite"))
+    t1 = again.failed_at["food"]
+    assert again.resting("food", t1 + 39 * 60) and not again.resting("food", t1 + 41 * 60)
+    # a count saved before failure times existed does not lock the step forever
+    again.failed_at.pop("iron", None)
+    again.failed_milestones["iron"] = 3
+    assert not again.resting("iron")
+
+
+def test_instinct_explores_for_what_resting_steps_lacked(tmp_path):
+    obs = sample_observation()
+    obs.world.phase = "day"
+    obs.self_.food = 20
+    obs.inventory.items = [ItemStack(name="stone_pickaxe", count=1, slot=0), ItemStack(name="stone_sword", count=1, slot=1)]
+    c = ctx(tmp_path, obs)
+    c.known_actions.add("explore")
+    for mid in ("food", "iron"):
+        for _ in range(3):
+            c.planner.record_milestone_failure(Task(description=mid, source=f"curriculum:{mid}"))
+    c.planner.done_milestones |= {"wood", "planks", "table", "sticks", "wood_pickaxe", "stone", "stone_tools", "coal", "torches", "furnace", "shelter"}
+    c.planner.failed_milestones["shelter"] = 0
+    assert c.planner.current_task() is None
+    d = instinct(c)
+    assert d.action_type == "primitive" and d.action_name == "explore", d
+    assert "cow" in d.action_args["lookFor"] and "iron_ore" in d.action_args["lookFor"]
+    # never at night
+    obs.world.phase = "night"
+    assert instinct(c).action_name != "explore"
+
+
+def test_a_recovery_goal_expires_with_the_drops_and_instinct_walks_back(tmp_path):
+    # seen live: a recovery goal from a death six hours earlier held the stack and instinct rested under it
+    store = MemoryStore(tmp_path / "rec.sqlite")
+    planner = Planner(store)
+    goal = planner.add_goal("Recover my belongings where I died (24, 62, -650)", [Task(description="go back", kind="explore", target=[24.0, 62.0, -650.0])], priority=2, source="self")
+    obs = sample_observation()
+    obs.world.phase = "day"
+    obs.self_.food = 20
+    c = InstinctContext(obs=obs, planner=planner, busy=False, available_skills=set(), known_actions=ACTIONS | {"collect_items"})
+    planner.done_milestones.add("wood_pickaxe")  # no pickaxe left after dying: the drops still come first
+    d = instinct(c)
+    assert d.action_name == "goto" and (d.action_args["x"], d.action_args["z"]) == (24.0, -650.0)
+    from emeth.protocol import ThreatState
+
+    # wounded with an archer in sight: not back into whatever killed it
+    obs.self_.health = 7
+    obs.entities.threat = ThreatState.model_validate({"danger": 0.6, "recommendation": "retreat", "reasons": ["skeleton 12m"], "nearest": {"name": "skeleton", "distance": 12}})
+    assert instinct(c).action_name != "goto"
+    obs.self_.health = 20
+    obs.self_.position.x, obs.self_.position.y, obs.self_.position.z = 24.0, 62.0, -649.0
+    assert instinct(c).action_name == "collect_items"
+    # a goal saved before expiry existed gets the five minutes back from its creation time
+    goal.created_at -= 3600
+    planner.save()
+    again = Planner(store)
+    assert again.current_task() is None and again.goals[-1].status == "abandoned"
+
+
+def test_instinct_replaces_a_lost_sword(tmp_path):
+    obs = sample_observation()
+    obs.world.phase = "day"
+    obs.self_.food = 20
+    obs.inventory.items = [ItemStack(name="stone_pickaxe", count=1, slot=0), ItemStack(name="cobblestone", count=4, slot=1)]
+    c = ctx(tmp_path, obs)
+    c.planner.done_milestones |= {"wood_pickaxe", "stone_tools"}
+    d = instinct(c)
+    assert d.action_name == "get" and d.action_args == {"name": "stone_sword", "count": 1}
+    obs.inventory.items.append(ItemStack(name="stone_sword", count=1, slot=2))
+    assert instinct(c).action_args.get("name") != "stone_sword"

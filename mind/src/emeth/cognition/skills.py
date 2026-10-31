@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from emeth.bridge.client import BodyClient
+from emeth.llm.base import FREE_ARGS_NOTE, free_args
 from emeth.llm.router import LLMRouter
 from emeth.llm.types import ChatRequest, Message
 from emeth.memory.context import render_blocks, render_inventory, render_sensory
@@ -30,10 +31,15 @@ SKILL_SCHEMA: dict[str, Any] = {
         "name": {"type": "string", "description": "snake_case skill name describing the reusable capability (e.g. mine_logs_nearby)."},
         "description": {"type": "string", "description": "One or two sentences: what the skill does, its args, when to use it."},
         "code": {"type": "string", "description": "Complete JavaScript source defining async function main(api, args)."},
-        "args": {"type": "object", "description": "Arguments to run it with now."},
+        "args_json": {"type": "string", "description": "Arguments to run it with now: " + FREE_ARGS_NOTE},
     },
-    "required": ["plan", "name", "description", "code", "args"],
+    "required": ["plan", "name", "description", "code", "args_json"],
 }
+
+# No "think step by step" here: under structured output that free-text reasoning has nowhere to go and burnt the whole
+# token budget (live: three syntheses in a row cut at 4000 tokens with an empty or `{"plan` answer). The plan field is
+# where the thinking goes.
+SKILL_SYSTEM = "You write robust Mineflayer-style skill programs for an autonomous Minecraft player. Answer with the JSON object only; reason in its `plan` field."
 
 SKILL_RULES = """Rules for skill code:
 - Define `async function main(api, args)`; everything happens inside it (helpers allowed). Return a small JSON-serialisable summary.
@@ -91,7 +97,7 @@ class SkillSynthesizer:
         last_name = safe_skill_name(goal)
         for attempt in range(1, self.max_attempts + 1):
             prompt = self._prompt(goal, obs, api_doc, examples, feedback, context_hint)
-            req = ChatRequest(messages=[Message(role="system", content="You write robust Mineflayer-style skill programs for an autonomous Minecraft player. Think step by step, then output JSON."), Message(role="user", content=prompt)], tier="code", temperature=0.2, max_tokens=4000, json_schema=SKILL_SCHEMA, json_schema_name="skill", purpose=f"skill.synthesis.{attempt}")
+            req = ChatRequest(messages=[Message(role="system", content=SKILL_SYSTEM), Message(role="user", content=prompt)], tier="code", temperature=0.2, max_tokens=6000, json_schema=SKILL_SCHEMA, json_schema_name="skill", purpose=f"skill.synthesis.{attempt}")
             try:
                 resp = await self.router.chat(req)
             except Exception as exc:  # noqa: BLE001
@@ -102,13 +108,16 @@ class SkillSynthesizer:
             m = CODE_BLOCK.search(code)
             if m:
                 code = m.group(1)
+            if resp.finish_reason in ("length", "max_tokens"):
+                feedback = "Your previous answer was cut off at the length limit before the code was complete. Keep `plan` to a few lines and write shorter code (one job, no speculative helpers)."
+                transcript.append(f"attempt {attempt}: answer truncated at the token limit")
+                continue
             if not code.strip():
                 feedback = "Your previous answer contained no code. Return the full JavaScript source in the `code` field."
                 transcript.append(f"attempt {attempt}: empty code")
                 continue
             last_name = safe_skill_name(str(data.get("name") or last_name))
-            raw_args = data.get("args")
-            args: dict[str, Any] = raw_args if isinstance(raw_args, dict) else {}
+            args: dict[str, Any] = free_args(data)
             check = await self.body.check_skill(code)
             if not check.ok:
                 feedback = "Static check rejected the code:\n- " + "\n- ".join(check.problems) + "\nFix these problems and return the complete code again."
@@ -131,12 +140,11 @@ class SkillSynthesizer:
 
     async def _args_for(self, skill: Skill, goal: str, obs: Observation) -> dict[str, Any]:
         """Ask the fast tier to fill the args of a reusable skill for this goal (cheap, structured)."""
-        schema = {"type": "object", "properties": {"args": {"type": "object"}}, "required": ["args"]}
+        schema = {"type": "object", "properties": {"args_json": {"type": "string", "description": FREE_ARGS_NOTE}}, "required": ["args_json"]}
         prompt = f"Goal: {goal}\nSkill `{skill.name}`: {skill.description}\nCode:\n{skill.code[:3000]}\nInventory: {render_inventory(obs)}\nReturn the args object to call main(api, args) with."
         try:
             resp = await self.router.chat(ChatRequest(messages=[Message(role="user", content=prompt)], tier="fast", temperature=0.0, json_schema=schema, json_schema_name="skill_args", purpose="skill.args"))
-            args = (resp.json_data or {}).get("args")
-            return args if isinstance(args, dict) else {}
+            return free_args(resp.json_data or {})
         except Exception:  # noqa: BLE001
             return {}
 

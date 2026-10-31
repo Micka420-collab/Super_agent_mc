@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assessSite, cardinalFromYaw, stairStep, summariseOres, tunnelStep, type BlockLookup } from '../src/motor/digging.js';
+import { assessSite, cardinalFromYaw, stairStep, stairUpStep, summariseOres, tunnelStep, type BlockLookup } from '../src/motor/digging.js';
 
 /** A solid stone world with a surface at y=64 and a few named cells overridden. */
 function world(overrides: Record<string, string | null> = {}, surfaceY = 64): BlockLookup {
@@ -23,6 +23,11 @@ describe('digging survey', () => {
     expect(s.feet).toEqual({ x: 2, y: 62, z: 0 });
     expect(s.clear).toEqual([{ x: 2, y: 62, z: 0 }, { x: 2, y: 63, z: 0 }, { x: 2, y: 64, z: 0 }]);
     expect(s.floor).toEqual({ x: 2, y: 61, z: 0 });
+    const up = stairUpStep({ x: 0.4, y: 44.0, z: 0.6 }, 'east', 2);
+    expect(up.feet).toEqual({ x: 2, y: 46, z: 0 });
+    // new feet, new head, and the cell over the previous step's head (room to jump)
+    expect(up.clear).toEqual([{ x: 2, y: 46, z: 0 }, { x: 2, y: 47, z: 0 }, { x: 1, y: 47, z: 0 }]);
+    expect(up.floor).toEqual({ x: 2, y: 45, z: 0 });
     const t = tunnelStep({ x: 0, y: 10, z: 0 }, 'north', 3);
     expect(t.feet).toEqual({ x: 0, y: 10, z: -3 });
     expect(t.clear).toHaveLength(2);
@@ -63,5 +68,21 @@ describe('digging survey', () => {
     expect(summariseOres(r.ores)).toEqual({ deepslate_diamond_ore: 1, iron_ore: 1 });
     // the floor being an ore is still a floor
     expect(r.floor).toBe('iron_ore');
+  });
+});
+
+describe('digging a way to a block', () => {
+  it('heads along the larger horizontal gap, climbing or descending when the target is higher or lower', async () => {
+    const { nextApproachStep } = await import('../src/motor/digging.js');
+    expect(nextApproachStep({ x: -56.4, y: 42, z: -644.3 }, { x: -58, y: 42, z: -640 })).toEqual({ kind: 'tunnel', direction: 'south' });
+    expect(nextApproachStep({ x: 0, y: 40, z: 0 }, { x: 6, y: 47, z: 1 })).toEqual({ kind: 'up', direction: 'east' });
+    expect(nextApproachStep({ x: 0, y: 40, z: 0 }, { x: 0, y: 30, z: -5 })).toEqual({ kind: 'down', direction: 'north' });
+    expect(nextApproachStep({ x: 0, y: 40, z: 0 }, { x: 0.5, y: 45, z: 0.2 })).toBeNull();
+  });
+
+  it('digs through terrain only, never through what someone built', async () => {
+    const { isTerrain } = await import('../src/motor/digging.js');
+    for (const n of ['stone', 'deepslate', 'iron_ore', 'deepslate_iron_ore', 'dirt', 'gravel', 'granite']) expect(isTerrain(n)).toBe(true);
+    for (const n of ['cobblestone', 'oak_planks', 'glass', 'stone_bricks', 'chest', 'crafting_table']) expect(isTerrain(n)).toBe(false);
   });
 });

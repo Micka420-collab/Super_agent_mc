@@ -56,9 +56,38 @@ class AnthropicProvider(Provider):
     def __init__(self, config: ProviderConfig, client: httpx.AsyncClient | None = None):
         super().__init__(config)
         self._client = client or httpx.AsyncClient(timeout=config.timeout_s)
+        # learned quirks: recent models (Haiku/Sonnet 5.5, Opus 5.5, Fable 5.1) reject non-default sampling, and some
+        # reject a forced tool_choice ("any"/named tool). Learned once per process from the 400, then never sent again.
+        self._sampling_ok = True
+        self._forced_tool_ok = True
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+    def _adapt_body(self, body: dict[str, Any]) -> None:
+        if not self._sampling_ok:
+            body.pop("temperature", None)
+        choice = body.get("tool_choice")
+        if not self._forced_tool_ok and isinstance(choice, dict) and choice.get("type") in ("any", "tool"):
+            body["tool_choice"] = {"type": "auto"}
+            if choice.get("type") == "tool":
+                note = f"Answer only by calling the `{choice.get('name')}` tool."
+                system = body.get("system") or [{"type": "text", "text": ""}]
+                body["system"] = [*system, {"type": "text", "text": note}]
+
+    def _learn(self, status: int, text: str, body: dict[str, Any]) -> bool:
+        """True when the 400 names a quirk we can drop, so the request is worth one more try."""
+        if status != 400:
+            return False
+        low = text.lower()
+        learned = False
+        if self._sampling_ok and "temperature" in body and any(k in low for k in ("temperature", "top_p", "sampling")):
+            self._sampling_ok = False
+            learned = True
+        if self._forced_tool_ok and "tool_choice" in low and isinstance(body.get("tool_choice"), dict) and body["tool_choice"].get("type") in ("any", "tool"):
+            self._forced_tool_ok = False
+            learned = True
+        return learned
 
     async def chat(self, request: ChatRequest) -> ChatResponse:
         model = self.model_for(request.tier)
@@ -92,6 +121,9 @@ class AnthropicProvider(Provider):
             body["tool_choice"] = tool_choice
         if request.stop:
             body["stop_sequences"] = request.stop
+        if self.config.effort:
+            body["output_config"] = {"effort": self.config.effort}
+        self._adapt_body(body)
         headers = {
             "x-api-key": self.api_key() or "",
             "anthropic-version": ANTHROPIC_VERSION,
@@ -104,6 +136,13 @@ class AnthropicProvider(Provider):
         except httpx.HTTPError as exc:
             raise LLMError(f"{self.id}: {exc}", retryable=True, provider=self.id) from exc
         latency = (time.perf_counter() - t0) * 1000
+        while resp.status_code == 400 and self._learn(resp.status_code, resp.text, body):
+            self._adapt_body(body)
+            try:
+                resp = await self._client.post(f"{self.config.base_url.rstrip('/')}/v1/messages", json=body, headers=headers)
+            except httpx.HTTPError as exc:
+                raise LLMError(f"{self.id}: {exc}", retryable=True, provider=self.id) from exc
+            latency = (time.perf_counter() - t0) * 1000
         if resp.status_code >= 400:
             raise LLMError(f"{self.id}: HTTP {resp.status_code} {resp.text[:300]}", status=resp.status_code, retryable=classify_status(resp.status_code), provider=self.id)
         data = resp.json()

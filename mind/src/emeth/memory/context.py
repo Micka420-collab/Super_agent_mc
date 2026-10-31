@@ -78,11 +78,15 @@ def render_sensory(obs: Observation, woke_by: str = "") -> str:
     elif w.phase == "night":
         time_line = f"Day {w.day}, NIGHT (dawn in ~{minutes_to(w.timeOfDay, 23000)} min) — monsters spawn in the dark"
     else:
-        time_line = f"Day {w.day}, dawn"
+        time_line = f"Day {w.day}, DAWN — the night is over, the sun is rising (full day in ~{minutes_to(w.timeOfDay, 1000)} min); monsters still out burn or leave"
     weather = " Raining." if w.isRaining else ""
     thunder = " Thunderstorm!" if w.isThundering else ""
     lines.append(f"{time_line}.{weather}{thunder} Light here {w.lightLevel:.0f}/15.")
     lines.append(f"Standing on {obs.blocks.standingOn}; at feet {obs.blocks.atFeet}; above head {obs.blocks.atHead}." + (f" Facing {obs.blocks.facing.name} at {obs.blocks.facing.distance:.0f}m." if obs.blocks.facing else ""))
+    enc = obs.blocks.enclosure
+    if enc is not None:
+        # measured by the body every observation: trust it over any memory of having "sealed" a shelter
+        lines.append(f"Shelter (measured now): {enc.summary}." if enc.enclosed else f"Shelter (measured now): NONE — {enc.summary}.")
     if obs.vision and obs.vision.horizon:
         horizon = ", ".join(f"{k}: {v}" for k, v in list(obs.vision.horizon.items())[:8])
         lines.append(f"In view (by direction): {horizon}")
@@ -128,7 +132,46 @@ def render_inventory(obs: Observation, max_items: int = 30) -> str:
     if not inv:
         return f"Inventory: empty ({obs.inventory.freeSlots}/{obs.inventory.totalSlots} slots free)."
     items = sorted(inv.items(), key=lambda kv: -kv[1])[:max_items]
-    return f"Inventory ({obs.inventory.totalSlots - obs.inventory.freeSlots}/{obs.inventory.totalSlots} slots used): " + ", ".join(f"{n}×{c}" for n, c in items)
+    line = f"Inventory ({obs.inventory.totalSlots - obs.inventory.freeSlots}/{obs.inventory.totalSlots} slots used): " + ", ".join(f"{n}×{c}" for n, c in items)
+    tools = render_tools(obs)
+    return f"{line}\n{tools}" if tools else line
+
+
+TOOL_KINDS = ("pickaxe", "axe", "shovel", "sword", "hoe", "shears")
+WORN_FRACTION = 0.2
+
+
+def render_tools(obs: Observation) -> str:
+    """Tool wear, as a player sees the bar under each tool — and the missing pickaxe, said plainly.
+
+    Seen live: the stone pickaxe wore out unnoticed and the agent went on breaking stone by hand, holding cobblestone,
+    with 300 cobblestone and 2 sticks in its bag (everything a new pickaxe needs).
+    """
+    stacks = list(obs.inventory.items)
+    if obs.self_.heldItem is not None and all(it.slot != obs.self_.heldItem.slot for it in stacks):
+        stacks.append(obs.self_.heldItem)
+    tools = [it for it in stacks if it.name.endswith(TOOL_KINDS) and it.maxDurability]
+    parts: list[str] = []
+    warnings: list[str] = []
+    for it in tools:
+        left, total = int(it.durability or 0), int(it.maxDurability or 0)
+        parts.append(f"{it.name} {left}/{total}")
+        if total and left / total <= WORN_FRACTION:
+            warnings.append(f"{it.name} is almost worn out ({left} uses left): craft a spare NOW, before it breaks")
+    if not any(it.name.endswith("_pickaxe") for it in tools):
+        inv = obs.inventory.summary()
+        sticks = inv.get("stick", 0)
+        cobble = inv.get("cobblestone", 0) + inv.get("cobbled_deepslate", 0) + inv.get("blackstone", 0)
+        planks = sum(c for n, c in inv.items() if n.endswith("_planks"))
+        can = (
+            "you carry what a stone_pickaxe needs (3 cobblestone + 2 sticks) — `get stone_pickaxe` does the rest: it finds or reaches a crafting table, breaking through walls by hand if you are shut in"
+            if cobble >= 3 and sticks >= 2
+            else "`get wooden_pickaxe` plans it from what you have (logs → planks → sticks → table)"
+        )
+        warnings.append(f"NO PICKAXE: stone and ores cannot be mined by hand (7 s per block, nothing drops) — make one first: {can}" + ("; a crafting table needs 4 planks" if planks < 4 else ""))
+    if not parts and not warnings:
+        return ""
+    return ("Tools: " + ", ".join(parts) + "." if parts else "Tools: none.") + "".join(f" ⚠ {w}." for w in warnings)
 
 
 def render_action_result(result: ActionResult | SkillRunResult | None, max_chars: int = 900) -> str:

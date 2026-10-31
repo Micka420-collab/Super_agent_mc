@@ -2,11 +2,12 @@ import { z } from 'zod';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
 import { BodyError, ErrorCodes } from '../protocol.js';
-import { DEFAULT_PROFILE, goTo, goToBlock, type MovementProfile } from '../motor/movement.js';
-import { equipBestTool, findItem, hasFreeSlot, inventorySummary, resolveBlockNames, type ItemSummary } from '../motor/items.js';
-import { assessSite, cardinalFromYaw, stairStep, summariseOres, tunnelStep, type BlockLookup, type Cardinal, type Course, type NamedCell } from '../motor/digging.js';
+import { DEFAULT_PROFILE, goTo, goToBlock, haltPathfinder, type MovementProfile } from '../motor/movement.js';
+import { equipBestTool, findItem, hasFreeSlot, inventorySummary, normalizeName, resolveBlockNames, type ItemSummary } from '../motor/items.js';
+import { ProcurementPlanner } from '../motor/procurement.js';
+import { assessSite, cardinalFromYaw, isTerrain, nextApproachStep, stairStep, stairUpStep, summariseOres, tunnelStep, type BlockLookup, type Cardinal, type Course, type NamedCell } from '../motor/digging.js';
 import { describeOre, miningAdvice } from '../motor/ores.js';
-import { placeBlockAt } from '../motor/placing.js';
+import { isOwnBlock, placeBlockAt } from '../motor/placing.js';
 import { raceAbort, sleep, throwIfAborted } from '../util/async.js';
 import { distance } from '../util/geometry.js';
 import { defineAction, type ActionContext } from './registry.js';
@@ -47,9 +48,82 @@ export function isHarvestable(ctx: ActionContext, block: Block): boolean {
   return Number.isFinite(age) ? age >= Math.max(...ages) : true;
 }
 
+const REACH = 4.4;
+
+function eyeDistance(bot: ActionContext['bot'], p: { x: number; y: number; z: number }): number {
+  const e = bot.entity.position;
+  return distance({ x: e.x, y: e.y + 1.62, z: e.z }, { x: p.x + 0.5, y: p.y + 0.5, z: p.z + 0.5 });
+}
+
+/**
+ * Get within reach of a block and in sight of it, the way a player does when it is behind stone: walk if there is a
+ * way, otherwise dig a surveyed 1×2 corridor through natural terrain towards it, then break whatever terrain still
+ * hides it. Seen live: `mine iron_ore` timed out twice on an ore 5 blocks away behind the wall, and reported the ore
+ * as mined while it was still there.
+ */
+export async function reachBlock(ctx: ActionContext, target: Block, opts: { byHand?: boolean; walkFirst?: boolean } = {}): Promise<void> {
+  const bot = ctx.bot;
+  const lookup: BlockLookup = (x, y, z) => bot.blockAt(new Vec3(x, y, z))?.name ?? null;
+  const same = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => a.x === b.x && a.y === b.y && a.z === b.z;
+  if (opts.walkFirst !== false) {
+    try {
+      await goToBlock(bot, target.position, ctx.signal, 30_000);
+    } catch (err) {
+      if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+      ctx.log.debug({ err }, 'no walking path to the block: digging a way');
+    }
+  }
+  let why = 'step budget used up';
+  let dug = 0;
+  for (let i = 0; i < 40 && eyeDistance(bot, target.position) > REACH; i++) {
+    throwIfAborted(ctx.signal);
+    const feet = bot.entity.position.floored();
+    const step = nextApproachStep(feet, target.position);
+    if (!step) {
+      why = 'the target is straight above or below';
+      break;
+    }
+    const course: Course = step.kind === 'tunnel' ? tunnelStep(feet, step.direction, 1) : step.kind === 'up' ? stairUpStep(feet, step.direction, 1) : stairStep(feet, step.direction, 1);
+    if (course.clear.some((c) => same(c, target.position))) {
+      why = 'the target is next in line';
+      break;
+    }
+    const report = assessSite(lookup, course);
+    if (!report.ok) throw new BodyError(ErrorCodes.NO_PATH, `cannot dig a way to the ${target.name}: ${report.stop ?? 'unsafe'}`, { hazards: report.hazards });
+    const built = course.clear.filter((c) => {
+      const n = lookup(c.x, c.y, c.z);
+      return !!n && !AIR_NAMES.has(n) && !isTerrain(n) && !isOwnBlock(c);
+    });
+    if (built.length) throw new BodyError(ErrorCodes.NO_PATH, `the way to the ${target.name} goes through ${lookup(built[0]!.x, built[0]!.y, built[0]!.z)}, which someone placed — I do not dig through builds`);
+    if (!opts.byHand) requirePickaxe(ctx);
+    for (const cell of [...course.clear].reverse()) await clearCell(ctx, cell, report.falling.length > 0);
+    try {
+      await goTo(bot, { x: course.feet.x + 0.5, y: course.feet.y, z: course.feet.z + 0.5 }, 0.6, ctx.signal, { timeoutMs: 12_000, profile: COURSE_PROFILE });
+      dug += 1;
+      ctx.progress(`digging my way to the ${target.name}: step ${dug}, ${eyeDistance(bot, target.position).toFixed(1)} m left`);
+    } catch (err) {
+      if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+      why = `could not step into the dug cell ${course.feet.x},${course.feet.y},${course.feet.z}: ${(err as Error).message}`;
+      break;
+    }
+  }
+  if (eyeDistance(bot, target.position) > REACH + 0.6) throw new BodyError(ErrorCodes.NO_PATH, `could not get within reach of the ${target.name} (${eyeDistance(bot, target.position).toFixed(1)} m, ${dug} steps dug): ${why}`);
+  // clear the line of sight: break the terrain between my eyes and the block
+  for (let i = 0; i < 4; i++) {
+    const e = bot.entity.position;
+    const eye = { x: e.x, y: e.y + 1.62, z: e.z };
+    const c = { x: target.position.x + 0.5, y: target.position.y + 0.5, z: target.position.z + 0.5 };
+    const len = distance(eye, c);
+    const hit = ctx.observer.raycast(eye, { x: (c.x - eye.x) / len, y: (c.y - eye.y) / len, z: (c.z - eye.z) / len }, len + 0.5);
+    if (!hit || same(hit.position, target.position)) return;
+    if (!isTerrain(hit.name) && !isOwnBlock(hit.position)) throw new BodyError(ErrorCodes.NO_PATH, `${hit.name} is in the way of the ${target.name}, and I do not dig through builds`);
+    await clearCell(ctx, hit.position, false);
+  }
+}
+
 async function digBlock(ctx: ActionContext, block: Block): Promise<void> {
   const bot = ctx.bot;
-  await goToBlock(bot, block.position, ctx.signal);
+  await reachBlock(ctx, block);
   throwIfAborted(ctx.signal);
   await equipBestTool(bot, block);
   await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true);
@@ -69,10 +143,21 @@ defineAction({
   }),
   async run(ctx, a) {
     const bot = ctx.bot;
-    const names = resolveBlockNames(bot, a.name);
+    let names = resolveBlockNames(bot, a.name);
+    const find = (set: Set<string>) => bot.findBlocks({ matching: (b) => set.has(b.name) && isHarvestable(ctx, b), maxDistance: a.maxDistance, count: Math.max(a.count * 4, 16) });
+    let positions = names.length ? find(new Set(names)) : [];
+    if (!positions.length) {
+      // asked for an item rather than a block (cobblestone, coal, raw_iron…): mine what drops it, as a player would
+      const item = normalizeName(a.name);
+      const sources = bot.registry.itemsByName[item] ? new ProcurementPlanner({ registry: bot.registry, inventory: {} }).blocksDropping(item).filter((b) => !names.includes(b)) : [];
+      const found = sources.length ? find(new Set(sources)) : [];
+      if (found.length) {
+        ctx.progress(`${item} comes from ${sources.slice(0, 3).join('/')}: mining that`);
+        names = sources;
+        positions = found;
+      }
+    }
     if (!names.length) throw new BodyError(ErrorCodes.NOT_FOUND, `unknown block: ${a.name}`);
-    const nameSet = new Set(names);
-    const positions = bot.findBlocks({ matching: (b) => nameSet.has(b.name) && isHarvestable(ctx, b), maxDistance: a.maxDistance, count: Math.max(a.count * 4, 16) });
     if (!positions.length) {
       const advice = miningAdvice(names, bot.entity.position.y, String(bot.game?.dimension ?? 'overworld'));
       const hint = advice.move === 'descend' || advice.move === 'ascend' ? ` — ${advice.reason}: use \`descend\` to Y ${advice.targetY}` : advice.move === 'elsewhere' ? ` — ${advice.reason}` : ' (ripe, if it is a crop) — explore, or `tunnel` if it is an ore';
@@ -94,11 +179,26 @@ defineAction({
       await raceAbort(collect.collect(targets, { ignoreNoPath: true }), ctx.signal, {
         timeoutMs: 20_000 + 15_000 * targets.length,
         onCancel: () => {
-          bot.pathfinder.stop();
+          haltPathfinder(bot);
           bot.stopDigging();
         },
       });
-      mined = targets.length;
+      // count what really broke: collectBlock skips unreachable blocks silently (ignoreNoPath)
+      mined = targets.filter((b) => bot.blockAt(b.position)?.name !== b.name).length;
+      // what it could not reach: dig a way to it, as a player would, until the count is met
+      for (const b of targets) {
+        if (mined >= a.count) break;
+        if (bot.blockAt(b.position)?.name !== b.name) continue;
+        throwIfAborted(ctx.signal);
+        try {
+          await digBlock(ctx, b);
+          mined += 1;
+        } catch (err) {
+          if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+          ctx.log.debug({ err }, 'could not reach a target block');
+        }
+      }
+      if (mined === 0) throw new BodyError(ErrorCodes.NO_PATH, `found ${first.name} but could not reach any of it (behind walls or out of reach) — try \`dig\` on one at exact coordinates`, { at: targets.slice(0, 3).map((b) => b.position) });
     } else {
       for (const b of targets) {
         throwIfAborted(ctx.signal);
@@ -119,12 +219,22 @@ defineAction({
   category: 'mining',
   description: 'Break the block at exact coordinates (walks there first).',
   longRunning: true,
-  schema: z.object({ x: z.number().int(), y: z.number().int(), z: z.number().int(), collect: z.boolean().default(true) }),
+  schema: z.object({
+    x: z.number().int(),
+    y: z.number().int(),
+    z: z.number().int(),
+    collect: z.boolean().default(true),
+    byHand: z.boolean().default(false).describe('break it even without the right tool (slow, drops nothing) — only to escape'),
+  }),
   async run(ctx, a) {
     const bot = ctx.bot;
     const block = bot.blockAt(new Vec3(a.x, a.y, a.z));
     if (!block || block.name === 'air') throw new BodyError(ErrorCodes.NOT_FOUND, 'nothing to dig there');
     if (!bot.canDigBlock(block) && block.hardness === -1) throw new BodyError(ErrorCodes.BAD_REQUEST, `${block.name} cannot be broken`);
+    const harvest = canHarvest(ctx, block);
+    if (!harvest.ok && !a.byHand) {
+      throw new BodyError(ErrorCodes.MISSING_TOOL, `${block.name} needs one of ${harvest.needed?.slice(0, 3).join(', ')}: by hand it takes ages and drops nothing — make the tool first`, { needed: harvest.needed });
+    }
     const before = inventorySummary(bot);
     await digBlock(ctx, block);
     if (a.collect) {
@@ -177,7 +287,9 @@ const COURSE_PROFILE: MovementProfile = { ...DEFAULT_PROFILE, canDig: false, all
 const DIRECTION = z.enum(['north', 'south', 'east', 'west']);
 
 interface CourseOptions {
-  kind: 'stair' | 'tunnel';
+  kind: 'stair' | 'tunnel' | 'ascent';
+  /** ascent only: stop as soon as the feet are under the open sky */
+  untilSky?: boolean;
   direction?: Cardinal;
   steps: number;
   toY?: number;
@@ -187,7 +299,7 @@ interface CourseOptions {
 }
 
 export interface CourseResult {
-  kind: 'stair' | 'tunnel';
+  kind: 'stair' | 'tunnel' | 'ascent';
   direction: Cardinal;
   steps: number;
   from: { x: number; y: number; z: number };
@@ -212,9 +324,18 @@ async function clearCell(ctx: ActionContext, cell: { x: number; y: number; z: nu
     const block = bot.blockAt(new Vec3(cell.x, cell.y, cell.z));
     if (!block || AIR_NAMES.has(block.name)) return broken;
     if (block.hardness === -1 || block.name === 'bedrock') throw new BodyError(ErrorCodes.BAD_REQUEST, `${block.name} cannot be broken`);
+    // a pathfinder still steering (and digging on its own) aborts our dig: it must be quiet first (seen live)
+    haltPathfinder(bot);
     await equipBestTool(bot, block);
     await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true);
-    await raceAbort(bot.dig(block, true), ctx.signal, { timeoutMs: 30_000, onCancel: () => bot.stopDigging() });
+    try {
+      await raceAbort(bot.dig(block, true), ctx.signal, { timeoutMs: 60_000, onCancel: () => bot.stopDigging() });
+    } catch (err) {
+      if (!(err instanceof Error) || err.message !== 'Digging aborted' || attempt >= 2) throw err;
+      ctx.log.debug({ cell }, 'dig aborted by something else: retrying');
+      await sleep(250, ctx.signal);
+      continue;
+    }
     broken += 1;
     await sleep(expectFalling ? 400 : 60, ctx.signal);
   }
@@ -244,13 +365,18 @@ export async function digCourse(ctx: ActionContext, o: CourseOptions): Promise<C
   let torches = 0;
   let oresMined = 0;
   let reachedTarget = false;
-  let stoppedBecause = o.kind === 'stair' ? `dug ${o.steps} steps` : `tunnel of ${o.steps} blocks complete`;
+  let stoppedBecause = o.kind === 'tunnel' ? `tunnel of ${o.steps} blocks complete` : `dug ${o.steps} steps`;
   let feet = { x: origin.x, y: origin.y, z: origin.z };
   let behind = feet;
 
   for (let i = 1; i <= o.steps; i++) {
     throwIfAborted(ctx.signal);
-    const course: Course = o.kind === 'stair' ? stairStep(origin, direction, i) : tunnelStep(origin, direction, i);
+    const course: Course = o.kind === 'stair' ? stairStep(origin, direction, i) : o.kind === 'ascent' ? stairUpStep(origin, direction, i) : tunnelStep(origin, direction, i);
+    if (o.kind === 'ascent' && o.toY !== undefined && course.feet.y > o.toY) {
+      reachedTarget = true;
+      stoppedBecause = `reached Y ${feet.y}`;
+      break;
+    }
     if (o.kind === 'stair' && o.toY !== undefined && course.feet.y < o.toY) {
       reachedTarget = true;
       stoppedBecause = `reached Y ${feet.y}`;
@@ -295,7 +421,12 @@ export async function digCourse(ctx: ActionContext, o: CourseOptions): Promise<C
         ctx.log.debug({ err }, 'no spot for a torch here');
       }
     }
-    ctx.progress(`${o.kind === 'stair' ? 'descending' : 'tunnelling'} ${direction}: step ${i}/${o.steps}, Y ${feet.y}`, { feet, oresSeen: oresSeen.size });
+    ctx.progress(`${o.kind === 'stair' ? 'descending' : o.kind === 'ascent' ? 'climbing' : 'tunnelling'} ${direction}: step ${i}/${o.steps}, Y ${feet.y}`, { feet, oresSeen: oresSeen.size });
+    if (o.kind === 'ascent' && o.untilSky && (bot.blockAt(new Vec3(feet.x, feet.y + 1, feet.z))?.skyLight ?? 0) >= 14) {
+      reachedTarget = true;
+      stoppedBecause = `out under the open sky at Y ${feet.y}`;
+      break;
+    }
     if (bot.health < o.minHealth) {
       stoppedBecause = `health ${bot.health} below ${o.minHealth}`;
       break;
@@ -306,6 +437,10 @@ export async function digCourse(ctx: ActionContext, o: CourseOptions): Promise<C
     }
   }
   if (o.kind === 'stair' && o.toY !== undefined && feet.y <= o.toY) reachedTarget = true;
+  if (o.kind === 'ascent' && o.toY !== undefined && feet.y >= o.toY && !reachedTarget) {
+    reachedTarget = true;
+    stoppedBecause = `reached Y ${feet.y}`;
+  }
   await sleep(300, ctx.signal);
   return {
     kind: o.kind,
@@ -342,6 +477,28 @@ defineAction({
     if (y <= a.toY) return { kind: 'stair', steps: 0, reachedTarget: true, stoppedBecause: `already at Y ${y}, at or below ${a.toY}`, end: ctx.bot.entity.position.floored(), oresSeen: {} };
     const steps = Math.min(a.maxSteps, y - a.toY);
     return digCourse(ctx, { kind: 'stair', direction: a.direction, steps, toY: a.toY, torchEvery: a.torchEvery, minHealth: a.minHealth, mineOres: a.mineOres });
+  },
+});
+
+defineAction({
+  name: 'ascend',
+  category: 'mining',
+  description:
+    'Dig a safe 1-wide staircase UP — the way out of a pit, a cave or a sealed shelter when walking (`goto`) finds no path. Surveys every step (lava, water, gravel that would fall, unloaded chunks) and stops under the open sky (default) or at `toY`. Needs a pickaxe.',
+  longRunning: true,
+  schema: z.object({
+    toY: z.number().int().min(-64).max(320).optional().describe('stop at this Y; default: climb until under the open sky'),
+    direction: DIRECTION.optional().describe('defaults to where I am looking — face your destination'),
+    torchEvery: z.number().int().min(2).max(32).default(8),
+    minHealth: z.number().min(0).max(20).default(6),
+    maxSteps: z.number().int().min(1).max(200).default(96),
+    mineOres: z.boolean().default(true),
+  }),
+  async run(ctx, a) {
+    const y = Math.floor(ctx.bot.entity.position.y);
+    if (a.toY !== undefined && y >= a.toY) return { kind: 'ascent', steps: 0, reachedTarget: true, stoppedBecause: `already at Y ${y}, at or above ${a.toY}`, end: ctx.bot.entity.position.floored(), oresSeen: {} };
+    const steps = a.toY !== undefined ? Math.min(a.maxSteps, a.toY - y) : a.maxSteps;
+    return digCourse(ctx, { kind: 'ascent', direction: a.direction, steps, toY: a.toY, untilSky: a.toY === undefined, torchEvery: a.torchEvery, minHealth: a.minHealth, mineOres: a.mineOres });
   },
 });
 

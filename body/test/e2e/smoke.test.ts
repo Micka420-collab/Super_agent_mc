@@ -12,7 +12,7 @@ import { WebSocket } from 'ws';
 import { Vec3 } from 'vec3';
 import { loadConfig } from '../../src/config.js';
 import '../../src/actions/index.js';
-import { createBody, type BodyRuntime } from '../../src/bot.js';
+import { createBody, PLAYER_HALF_WIDTH, type BodyRuntime } from '../../src/bot.js';
 import { BridgeServer } from '../../src/bridge/server.js';
 import { createVision } from '../../src/vision/index.js';
 import { ObservationSchema, HelloResultSchema, ActionResultSchema, type ResponseEnvelope } from '../../src/protocol.js';
@@ -141,6 +141,8 @@ describe('body e2e (flying-squid)', () => {
 
   it('walks to a target with the pathfinder', async () => {
     const bot = runtime!.bot;
+    // the hitbox margin Paper needs to accept a position against a wall (no Paper here: only the setting is checked)
+    expect((bot as unknown as { physics: { playerHalfWidth: number } }).physics.playerHalfWidth).toBe(PLAYER_HALF_WIDTH);
     const start = bot.entity.position.clone();
     const target = start.offset(6, 0, 0);
     const res = await runtime!.runner.run({ action: 'goto', args: { x: target.x, y: target.y, z: target.z, range: 1.5, timeoutMs: 30_000 } });
@@ -182,10 +184,17 @@ describe('body e2e (flying-squid)', () => {
     expect(t.steps).toBe(3);
     expect(t.end.x).toBe(d.end.x - 3);
     expect(bot.blockAt(new Vec3(t.end.x, t.end.y + 1, t.end.z))?.name).toBe('air');
-    // walk back up to the surface for the rest of the suite
+    // and climb back out by a surveyed staircase going UP (the way out of a sealed shelter or a pit)
+    const up = await runtime!.runner.run({ action: 'ascend', args: { toY: start.y, direction: 'north', torchEvery: 32 } });
+    expect(up.ok, JSON.stringify(up)).toBe(true);
+    const u = up.result as { steps: number; reachedTarget: boolean; end: { x: number; y: number; z: number } };
+    expect(u.steps, JSON.stringify(u)).toBe(3);
+    expect(u.reachedTarget, JSON.stringify(u)).toBe(true);
+    expect(bot.entity.position.floored().y).toBe(start.y);
+    // walk back to the start for the rest of the suite
     const back = await runtime!.runner.run({ action: 'goto', args: { x: start.x + 0.5, y: start.y, z: start.z + 0.5, range: 1, timeoutMs: 30_000 } });
     expect(back.ok, JSON.stringify(back)).toBe(true);
-  });
+   }, 90_000); // descent + tunnel + ascent: 3 surveyed courses
 
   it('places blocks and builds a small wall from creative inventory', async () => {
     const bot = runtime!.bot;
@@ -240,6 +249,18 @@ describe('body e2e (flying-squid)', () => {
     expect(cleared.ok, JSON.stringify(cleared)).toBe(true);
     expect((cleared.result as { dug: number }).dug).toBeGreaterThanOrEqual(5);
   }, 120_000);
+
+  it('mines the block that drops an item when asked for the item (cobblestone → stone)', async () => {
+    const bot = runtime!.bot;
+    const base = bot.entity.position.floored();
+    const spot = { x: base.x + 2, y: base.y, z: base.z - 2 };
+    const placed = await runtime!.runner.run({ action: 'place', args: { name: 'stone', ...spot } });
+    expect(placed.ok, JSON.stringify(placed)).toBe(true);
+    // no cobblestone block anywhere on a superflat world: before the fix this was NOT_FOUND
+    const res = await runtime!.runner.run({ action: 'mine', args: { name: 'cobblestone', count: 1, maxDistance: 8 } });
+    expect(res.ok, JSON.stringify(res)).toBe(true);
+    expect(bot.blockAt(new Vec3(spot.x, spot.y, spot.z))?.name).toBe('air');
+  }, 60_000);
 
   it('builds a designed cottage (floor, log corners, walls, window panes) from a blueprint', async () => {
     const bot = runtime!.bot;

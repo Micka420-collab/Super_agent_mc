@@ -1,6 +1,8 @@
 /**
  * Block placement helpers — the fiddly part of being a Minecraft player.
  */
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { Bot } from 'mineflayer';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
@@ -106,6 +108,52 @@ export interface PlaceResult {
  * Place `itemName` at `pos`. Walks into a position from which the reference block is reachable,
  * sneaks to avoid activating containers, and verifies the result.
  */
+/**
+ * Cells I placed myself (shelter walls, seals, towers). A player may dig back through their own walls, never through
+ * someone else's build: this is what tells the two apart for a body that cannot read block ownership. Kept for the
+ * life of the process, capped.
+ */
+const OWN_BLOCKS_MAX = 20_000;
+const ownKey = (p: Vec3Like) => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
+// persisted per server (the walls survive a restart of the body; seen live: sealed in by walls placed before one)
+const OWN_BLOCKS_FILE = process.env.EMETH_OWN_BLOCKS_FILE ?? join(process.env.BODY_STATE_DIR ?? 'data', `own-blocks-${process.env.MC_HOST ?? 'local'}-${process.env.MC_PORT ?? '25565'}.json`);
+const OWN_BLOCKS = loadOwnBlocks();
+let saveTimer: NodeJS.Timeout | undefined;
+
+function loadOwnBlocks(): Set<string> {
+  if (process.env.VITEST) return new Set();
+  try {
+    const raw: unknown = JSON.parse(readFileSync(OWN_BLOCKS_FILE, 'utf8'));
+    return new Set(Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string').slice(-OWN_BLOCKS_MAX) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveOwnBlocksSoon(): void {
+  if (process.env.VITEST || saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = undefined;
+    try {
+      mkdirSync(dirname(OWN_BLOCKS_FILE), { recursive: true });
+      writeFileSync(OWN_BLOCKS_FILE, JSON.stringify([...OWN_BLOCKS]));
+    } catch {
+      /* best effort: a lost file only makes the body more careful */
+    }
+  }, 2_000);
+  saveTimer.unref?.();
+}
+
+export function rememberOwnBlock(p: Vec3Like): void {
+  if (OWN_BLOCKS.size >= OWN_BLOCKS_MAX) OWN_BLOCKS.delete(OWN_BLOCKS.values().next().value as string);
+  OWN_BLOCKS.add(ownKey(p));
+  saveOwnBlocksSoon();
+}
+
+export function isOwnBlock(p: Vec3Like): boolean {
+  return OWN_BLOCKS.has(ownKey(p));
+}
+
 export async function placeBlockAt(bot: Bot, itemName: string, pos: Vec3Like, signal?: AbortSignal): Promise<PlaceResult> {
   const target = new Vec3(Math.floor(pos.x), Math.floor(pos.y), Math.floor(pos.z));
   const existing = bot.blockAt(target);
@@ -163,6 +211,7 @@ export async function placeBlockAt(bot: Bot, itemName: string, pos: Vec3Like, si
   await sleep(100, signal);
   const after = bot.blockAt(target);
   const ok = !!after && !isReplaceable(after);
+  if (ok) rememberOwnBlock(target);
   return { placed: ok, position: target, block: after?.name ?? 'air', ...(ok ? {} : { reason: 'block did not appear' }) };
 }
 

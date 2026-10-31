@@ -119,6 +119,8 @@ export const WorldStateSchema = z.object({
   lightLevel: z.number(),
   skyLight: z.number(),
   moonPhase: z.number().optional(),
+  /** Other players connected to the server (the tab list a player sees), whether or not they are in sight. */
+  online: z.array(z.string()).optional(),
 });
 
 export const InventoryStateSchema = z.object({
@@ -158,6 +160,8 @@ export const BlocksStateSchema = z.object({
   facing: BlockViewSchema.nullable(),
   notable: z.array(BlockViewSchema),
   nearbyCounts: z.record(z.string(), z.number()),
+  /** Is the open space around the agent closed on every side? (bounded flood fill, motor/enclosure.ts) */
+  enclosure: z.object({ enclosed: z.boolean(), cells: z.number(), roofed: z.boolean(), summary: z.string() }).optional(),
 });
 
 export const VisionStateSchema = z.object({

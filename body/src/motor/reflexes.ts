@@ -11,13 +11,15 @@ import type { Bot } from 'mineflayer';
 import type { Entity } from 'prismarine-entity';
 import type { ActionRunner, Running } from '../actions/runner.js';
 import type { Observer } from '../perception/observer.js';
-import { classifyEntity, EXPLOSIVE_MOBS, isThreat } from '../perception/entities.js';
+import { classifyEntity, EXPLOSIVE_MOBS, isThreat, RANGED_MOBS } from '../perception/entities.js';
 import { ReflexConfigSchema, type ReflexConfig } from '../protocol.js';
 import { getLogger } from '../util/logger.js';
 import { distance } from '../util/geometry.js';
 import { equipBestWeapon } from './items.js';
 import { fleeFrom, holdControl, stopAllMovement } from './movement.js';
+import type { Vec3 } from 'vec3';
 import { assessThreat, type ThreatAssessment } from './threat.js';
+import { assessEnclosure, solidLookup } from './enclosure.js';
 
 export type ReflexEmitter = (payload: Record<string, unknown>) => void;
 
@@ -32,6 +34,21 @@ interface PvpPlugin {
   attack: (target: Entity) => Promise<void>;
   stop: () => Promise<void>;
   target?: Entity;
+}
+
+/**
+ * How far to run from a threat. An archer keeps shooting up to ~16 blocks and follows: fleeing to 16 left the bot in
+ * range, and a skeleton took it from 20 to 0 over five flee cycles (seen live). Ranged mobs get room beyond that.
+ */
+export const RANGED_FLEE_DISTANCE = 28;
+
+export function fleeDistanceFrom(name: string | undefined, base: number): number {
+  return name && RANGED_MOBS.has(name) ? Math.max(base, RANGED_FLEE_DISTANCE) : base;
+}
+
+/** A fight in progress is abandoned when the body's own reading of the odds says to run. */
+export function shouldBreakOff(odds: ThreatAssessment | null, fleeAtDanger: number): boolean {
+  return !!odds && odds.recommendation === 'flee' && odds.danger >= fleeAtDanger;
 }
 
 export class ReflexSystem {
@@ -97,9 +114,26 @@ export class ReflexSystem {
       const angry = this.lastAttackerId === e.id && Date.now() - this.lastHurtAt < 8_000;
       if (!isThreat(kind, name, angry)) continue;
       const d = distance(bot.entity.position, e.position);
+      // a mob behind solid rock can neither reach nor see us (mobs target by line of sight): not a reason to run.
+      // Seen live: a creeper on the far side of a wall kept the flee reflex firing for minutes, the bot never moving.
+      if (!angry && d > 1.5 && !this.inSight(e)) continue;
       if (d <= range && (!best || d < best.dist)) best = { entity: e, dist: d };
     }
     return best;
+  }
+
+  /** Line of sight from my eyes to the entity's eyes, through the loaded world. */
+  private inSight(e: Entity): boolean {
+    const bot = this.bot;
+    const world = bot.world as unknown as { raycast?: (from: Vec3, dir: Vec3, max: number) => { position: Vec3 } | null };
+    if (!world.raycast) return true;
+    const eye = bot.entity.position.offset(0, 1.62, 0);
+    const target = e.position.offset(0, (e.height ?? 1.6) * 0.85, 0);
+    const delta = target.minus(eye);
+    const len = delta.norm();
+    if (len < 0.01) return true;
+    const hit = world.raycast(eye, delta.scaled(1 / len), len);
+    return !hit || distance(eye, { x: hit.position.x + 0.5, y: hit.position.y + 0.5, z: hit.position.z + 0.5 }) >= len - 0.5;
   }
 
   /** The same assessment the observation carries, from the live entities (never counts players or allies). */
@@ -114,6 +148,7 @@ export class ReflexSystem {
       const angry = this.lastAttackerId === e.id && Date.now() - this.lastHurtAt < 8_000;
       if (!isThreat(kind, name, angry)) continue;
       const d = distance(bot.entity.position, e.position);
+      if (!angry && d > 1.5 && !this.inSight(e)) continue; // behind rock: same rule as nearestThreat
       if (d <= range) hostiles.push({ name, distance: d });
     }
     const slot = (dest: 'head' | 'torso' | 'legs' | 'feet') => bot.inventory.slots[bot.getEquipmentDestSlot(dest)]?.name ?? null;
@@ -128,6 +163,7 @@ export class ReflexSystem {
       offhandItem: bot.inventory.slots[45]?.name ?? null,
       phase,
       skyLight: feet?.skyLight ?? 15,
+      enclosed: assessEnclosure(solidLookup(bot), bot.entity.position).enclosed,
     });
   }
 
@@ -194,7 +230,7 @@ export class ReflexSystem {
         priority: 80,
         reason: overwhelmed && odds ? `danger ${odds.danger} (${odds.reasons.slice(0, 3).join(', ')})` : `health ${bot.health} with ${threat.entity.name} at ${threat.dist.toFixed(1)}m`,
         run: async (running) => {
-          await fleeFrom(bot, threat.entity.position, cfg.fleeDistance, running.controller.signal, 12_000).catch(() => undefined);
+          await fleeFrom(bot, threat.entity.position, fleeDistanceFrom(threat.entity.name, cfg.fleeDistance), running.controller.signal, 12_000).catch(() => undefined);
         },
       };
     }
@@ -233,10 +269,17 @@ export class ReflexSystem {
             }
             void pvp.attack(threat.entity).catch(() => undefined);
             const deadline = Date.now() + 20_000;
+            let lastOdds = Date.now();
             while (Date.now() < deadline && !running.controller.signal.aborted) {
               const e = bot.entities[threat.entity.id];
               if (!e || (e.health !== undefined && e.health <= 0) || distance(bot.entity.position, e.position) > cfg.defendRange + 6) break;
               if (bot.health <= cfg.fleeAtHealth) break;
+              // only one reflex runs at a time, so the flee rule cannot see the odds turn mid-fight: read them here
+              // (seen live: bare hands against a drowned, danger 1, fought from 20 down to 1.7 and died fleeing)
+              if (Date.now() - lastOdds >= 1_000) {
+                lastOdds = Date.now();
+                if (shouldBreakOff(this.assess(), cfg.fleeAtDanger)) break;
+              }
               await new Promise((r) => setTimeout(r, 200));
             }
             await pvp.stop();
