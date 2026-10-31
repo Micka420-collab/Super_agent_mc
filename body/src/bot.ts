@@ -139,6 +139,22 @@ export function createBody(config: BodyConfig): BodyRuntime {
     if (entity.type !== 'player') return;
     emit('entity.gone', { id: entity.id, username: entity.username, name: entity.name });
   });
+  // the server moved us (teleport or anti-cheat correction): mineflayer then zeroes the velocity and onGround, which
+  // also makes the next dig 5× slower — worth seeing in the logs when it happens repeatedly
+  let forced = 0;
+  let forcedSince = Date.now();
+  bot.on('forcedMove', () => {
+    forced += 1;
+    if (Date.now() - forcedSince >= 10_000) {
+      if (forced >= 3) {
+        const pf = (bot as unknown as { pathfinder?: { isMoving?: () => boolean; isMining?: () => boolean; goal?: { constructor?: { name?: string } } | null } }).pathfinder;
+        const controls = Object.entries(bot.controlState).filter(([, on]) => on).map(([k]) => k);
+        log.warn({ corrections: forced, position: bot.entity.position, pathfinding: pf?.isMoving?.() ?? false, mining: pf?.isMining?.() ?? false, goal: pf?.goal?.constructor?.name ?? null, controls, digging: !!(bot as unknown as { targetDigBlock?: unknown }).targetDigBlock }, 'server keeps correcting my position');
+      }
+      forced = 0;
+      forcedSince = Date.now();
+    }
+  });
   bot.on('playerJoined', (player) => {
     if (player.username === bot.username) return;
     observer.pushEvent('player.joined', `${player.username} joined the server`);

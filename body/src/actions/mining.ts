@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { Block } from 'prismarine-block';
 import { Vec3 } from 'vec3';
 import { BodyError, ErrorCodes } from '../protocol.js';
-import { DEFAULT_PROFILE, goTo, goToBlock, type MovementProfile } from '../motor/movement.js';
+import { DEFAULT_PROFILE, goTo, goToBlock, haltPathfinder, type MovementProfile } from '../motor/movement.js';
 import { equipBestTool, findItem, hasFreeSlot, inventorySummary, normalizeName, resolveBlockNames, type ItemSummary } from '../motor/items.js';
 import { ProcurementPlanner } from '../motor/procurement.js';
 import { assessSite, cardinalFromYaw, isTerrain, nextApproachStep, stairStep, stairUpStep, summariseOres, tunnelStep, type BlockLookup, type Cardinal, type Course, type NamedCell } from '../motor/digging.js';
@@ -61,23 +61,33 @@ function eyeDistance(bot: ActionContext['bot'], p: { x: number; y: number; z: nu
  * hides it. Seen live: `mine iron_ore` timed out twice on an ore 5 blocks away behind the wall, and reported the ore
  * as mined while it was still there.
  */
-export async function reachBlock(ctx: ActionContext, target: Block, opts: { byHand?: boolean } = {}): Promise<void> {
+export async function reachBlock(ctx: ActionContext, target: Block, opts: { byHand?: boolean; walkFirst?: boolean } = {}): Promise<void> {
   const bot = ctx.bot;
   const lookup: BlockLookup = (x, y, z) => bot.blockAt(new Vec3(x, y, z))?.name ?? null;
   const same = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) => a.x === b.x && a.y === b.y && a.z === b.z;
-  try {
-    await goToBlock(bot, target.position, ctx.signal, 30_000);
-  } catch (err) {
-    if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
-    ctx.log.debug({ err }, 'no walking path to the block: digging a way');
+  if (opts.walkFirst !== false) {
+    try {
+      await goToBlock(bot, target.position, ctx.signal, 30_000);
+    } catch (err) {
+      if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+      ctx.log.debug({ err }, 'no walking path to the block: digging a way');
+    }
   }
-  for (let i = 0; i < 24 && eyeDistance(bot, target.position) > REACH; i++) {
+  let why = 'step budget used up';
+  let dug = 0;
+  for (let i = 0; i < 40 && eyeDistance(bot, target.position) > REACH; i++) {
     throwIfAborted(ctx.signal);
     const feet = bot.entity.position.floored();
     const step = nextApproachStep(feet, target.position);
-    if (!step) break;
+    if (!step) {
+      why = 'the target is straight above or below';
+      break;
+    }
     const course: Course = step.kind === 'tunnel' ? tunnelStep(feet, step.direction, 1) : step.kind === 'up' ? stairUpStep(feet, step.direction, 1) : stairStep(feet, step.direction, 1);
-    if (course.clear.some((c) => same(c, target.position))) break; // the target itself is next to us
+    if (course.clear.some((c) => same(c, target.position))) {
+      why = 'the target is next in line';
+      break;
+    }
     const report = assessSite(lookup, course);
     if (!report.ok) throw new BodyError(ErrorCodes.NO_PATH, `cannot dig a way to the ${target.name}: ${report.stop ?? 'unsafe'}`, { hazards: report.hazards });
     const built = course.clear.filter((c) => {
@@ -89,12 +99,15 @@ export async function reachBlock(ctx: ActionContext, target: Block, opts: { byHa
     for (const cell of [...course.clear].reverse()) await clearCell(ctx, cell, report.falling.length > 0);
     try {
       await goTo(bot, { x: course.feet.x + 0.5, y: course.feet.y, z: course.feet.z + 0.5 }, 0.6, ctx.signal, { timeoutMs: 12_000, profile: COURSE_PROFILE });
+      dug += 1;
+      ctx.progress(`digging my way to the ${target.name}: step ${dug}, ${eyeDistance(bot, target.position).toFixed(1)} m left`);
     } catch (err) {
       if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
+      why = `could not step into the dug cell ${course.feet.x},${course.feet.y},${course.feet.z}: ${(err as Error).message}`;
       break;
     }
   }
-  if (eyeDistance(bot, target.position) > REACH + 0.6) throw new BodyError(ErrorCodes.NO_PATH, `could not get within reach of the ${target.name} (${eyeDistance(bot, target.position).toFixed(1)} m)`);
+  if (eyeDistance(bot, target.position) > REACH + 0.6) throw new BodyError(ErrorCodes.NO_PATH, `could not get within reach of the ${target.name} (${eyeDistance(bot, target.position).toFixed(1)} m, ${dug} steps dug): ${why}`);
   // clear the line of sight: break the terrain between my eyes and the block
   for (let i = 0; i < 4; i++) {
     const e = bot.entity.position;
@@ -166,7 +179,7 @@ defineAction({
       await raceAbort(collect.collect(targets, { ignoreNoPath: true }), ctx.signal, {
         timeoutMs: 20_000 + 15_000 * targets.length,
         onCancel: () => {
-          bot.pathfinder.stop();
+          haltPathfinder(bot);
           bot.stopDigging();
         },
       });
@@ -311,9 +324,18 @@ async function clearCell(ctx: ActionContext, cell: { x: number; y: number; z: nu
     const block = bot.blockAt(new Vec3(cell.x, cell.y, cell.z));
     if (!block || AIR_NAMES.has(block.name)) return broken;
     if (block.hardness === -1 || block.name === 'bedrock') throw new BodyError(ErrorCodes.BAD_REQUEST, `${block.name} cannot be broken`);
+    // a pathfinder still steering (and digging on its own) aborts our dig: it must be quiet first (seen live)
+    haltPathfinder(bot);
     await equipBestTool(bot, block);
     await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true);
-    await raceAbort(bot.dig(block, true), ctx.signal, { timeoutMs: 30_000, onCancel: () => bot.stopDigging() });
+    try {
+      await raceAbort(bot.dig(block, true), ctx.signal, { timeoutMs: 60_000, onCancel: () => bot.stopDigging() });
+    } catch (err) {
+      if (!(err instanceof Error) || err.message !== 'Digging aborted' || attempt >= 2) throw err;
+      ctx.log.debug({ cell }, 'dig aborted by something else: retrying');
+      await sleep(250, ctx.signal);
+      continue;
+    }
     broken += 1;
     await sleep(expectFalling ? 400 : 60, ctx.signal);
   }

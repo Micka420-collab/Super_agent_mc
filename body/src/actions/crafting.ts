@@ -127,7 +127,7 @@ export async function ensureCraftingTable(ctx: ActionContext, maxDistance = UTIL
     } catch (err) {
       if (err instanceof BodyError && err.code === ErrorCodes.INTERRUPTED) throw err;
       ctx.progress('no way to the crafting table on foot: digging my way there by hand');
-      await reachBlock(ctx, existing, { byHand: true });
+      await reachBlock(ctx, existing, { byHand: true, walkFirst: false }); // the walk was just tried
     }
     return existing;
   }

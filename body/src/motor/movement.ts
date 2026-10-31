@@ -126,7 +126,7 @@ export async function goTo(
       const left = distance(bot.entity.position, target);
       if (!watch.sample(Date.now(), left)) return;
       clearInterval(ticker);
-      bot.pathfinder.stop();
+      haltPathfinder(bot);
       const shut = assessEnclosure(solidLookup(bot), bot.entity.position).enclosed;
       const hint = shut ? ' — I am sealed in: dig my way out first (`ascend` to climb out, or `tunnel` towards it)' : Math.abs(target.y - bot.entity.position.y) > 6 ? ' — the height difference is the problem: `ascend`/`descend` first' : ' — try a closer waypoint or another way round';
       reject(new BodyError(ErrorCodes.NO_PATH, `not getting any closer (${Math.round(left)} m left of ${Math.round(start)})${hint}`, { distanceLeft: Math.round(left), startDistance: Math.round(start), enclosed: shut }));
@@ -135,13 +135,14 @@ export async function goTo(
   try {
     await raceAbort(Promise.race([bot.pathfinder.goto(goal), stalled]), signal, {
       timeoutMs: opts.timeoutMs ?? 60_000,
-      onCancel: () => bot.pathfinder.stop(),
+      onCancel: () => haltPathfinder(bot),
       timeoutMessage: `took too long to reach the destination (it was ${Math.round(start)} m away)`,
     });
   } catch (err) {
     throw err instanceof BodyError ? err : mapPathError(err);
   } finally {
     clearInterval(ticker);
+    releaseGoal(bot, goal);
   }
 }
 
@@ -151,7 +152,7 @@ export async function goToBlock(bot: Bot, pos: Vec3Like, signal?: AbortSignal, t
   bot.pathfinder.setMovements(buildMovements(bot, DEFAULT_PROFILE));
   const goal = new goals.GoalGetToBlock(pos.x, pos.y, pos.z);
   try {
-    await raceAbort(bot.pathfinder.goto(goal), signal, { timeoutMs, onCancel: () => bot.pathfinder.stop() });
+    await raceAbort(bot.pathfinder.goto(goal), signal, { timeoutMs, onCancel: () => haltPathfinder(bot) }).finally(() => releaseGoal(bot, goal));
   } catch (err) {
     // fall back to a looser goal — GoalGetToBlock can be impossible for blocks embedded in walls
     const e = err as { name?: string };
@@ -226,6 +227,30 @@ export async function holdControl(
     await sleep(ms, signal);
   } finally {
     bot.setControlState(control, false);
+  }
+}
+
+/**
+ * Stop the pathfinder for real. `pathfinder.stop()` only asks it to stop once it reaches a safe spot, which a stuck
+ * bot never does: the goal stayed set after the action had ended, the pathfinder kept steering and digging under the
+ * next action, and the server corrected the bot's position every tick (~20/s, seen live). That froze its physics with
+ * onGround false and made every dig five times slower.
+ */
+export function haltPathfinder(bot: Bot): void {
+  try {
+    bot.pathfinder.setGoal(null);
+    bot.pathfinder.stop();
+  } catch {
+    /* pathfinder may not be loaded yet */
+  }
+}
+
+/** Whatever way a walk ends, it must not leave its goal behind. */
+function releaseGoal(bot: Bot, goal: unknown): void {
+  try {
+    if (bot.pathfinder.goal === goal) bot.pathfinder.setGoal(null);
+  } catch {
+    /* ignore */
   }
 }
 
