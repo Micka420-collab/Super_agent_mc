@@ -19,6 +19,9 @@ import type { EventName } from './protocol.js';
 import { getLogger } from './util/logger.js';
 import { distance, roundVec } from './util/geometry.js';
 
+/** The vanilla 0.3, plus the margin the server needs to accept a position against a wall. */
+export const PLAYER_HALF_WIDTH = 0.3001;
+
 const { pathfinder } = pathfinderPkg;
 
 export interface BodyRuntime {
@@ -65,6 +68,13 @@ export function createBody(config: BodyConfig): BodyRuntime {
   bot.loadPlugin(toolPlugin);
   bot.loadPlugin(autoEatPlugin);
   bot.loadPlugin(armorManager);
+  // Paper 1.21.11 refuses a position flush against a wall: prismarine-physics puts the hitbox exactly on the block
+  // face and the server sends us back every tick (~18 corrections/s, frozen physics, digs 5× slower, walks that never
+  // leave a wall or a tree top). A 0.0001 margin is enough: measured 85-95 corrections in 5 s against a wall → 0
+  bot.once('login', () => {
+    const physics = (bot as unknown as { physics?: { playerHalfWidth: number } }).physics;
+    if (physics) physics.playerHalfWidth = PLAYER_HALF_WIDTH;
+  });
 
   const observer = new Observer(bot, {
     honestPerception: config.MC_HONEST_PERCEPTION,
@@ -153,8 +163,12 @@ export function createBody(config: BodyConfig): BodyRuntime {
     burst.push(now);
     if (burst.length > 10) {
       burst = [];
-      stopAllMovement(bot);
-      log.warn({ position: bot.entity.position }, 'the server rejects my moves: stopped steering');
+      // only a goal left over from a finished action is cut: halting a live walk aborted crafts ("goal changed") and
+      // did not stop the corrections either (seen live: 20 per second with no goal and no key held)
+      if (!runner.isBusy()) {
+        stopAllMovement(bot);
+        log.warn({ position: bot.entity.position }, 'the server rejects my moves: stopped a leftover walk');
+      }
     }
     if (Date.now() - forcedSince >= 10_000) {
       if (forced >= 3) {

@@ -12,7 +12,7 @@ import { WebSocket } from 'ws';
 import { Vec3 } from 'vec3';
 import { loadConfig } from '../../src/config.js';
 import '../../src/actions/index.js';
-import { createBody, type BodyRuntime } from '../../src/bot.js';
+import { createBody, PLAYER_HALF_WIDTH, type BodyRuntime } from '../../src/bot.js';
 import { BridgeServer } from '../../src/bridge/server.js';
 import { createVision } from '../../src/vision/index.js';
 import { ObservationSchema, HelloResultSchema, ActionResultSchema, type ResponseEnvelope } from '../../src/protocol.js';
@@ -141,6 +141,8 @@ describe('body e2e (flying-squid)', () => {
 
   it('walks to a target with the pathfinder', async () => {
     const bot = runtime!.bot;
+    // the hitbox margin Paper needs to accept a position against a wall (no Paper here: only the setting is checked)
+    expect((bot as unknown as { physics: { playerHalfWidth: number } }).physics.playerHalfWidth).toBe(PLAYER_HALF_WIDTH);
     const start = bot.entity.position.clone();
     const target = start.offset(6, 0, 0);
     const res = await runtime!.runner.run({ action: 'goto', args: { x: target.x, y: target.y, z: target.z, range: 1.5, timeoutMs: 30_000 } });
