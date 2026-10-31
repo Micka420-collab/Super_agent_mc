@@ -55,6 +55,9 @@ def _ago(seconds: float) -> str:
     return f"{seconds // 3600}h{(seconds % 3600) // 60:02d} ago"
 
 
+REPEAT_WINDOW = 4
+
+
 class Timeline:
     """Ring buffer of recent events, persisted to the store as episodes."""
 
@@ -74,11 +77,13 @@ class Timeline:
     def add(self, kind: str, text: str, *, actors: list[str] | None = None, importance: float | None = None, ts: float | None = None) -> TimelineEntry:
         ts = ts or time.time()
         text = text.strip()
-        if self.entries and self.entries[-1].kind == kind and self.entries[-1].text == text:
-            last = self.entries[-1]
-            last.count += 1
-            last.ts = ts
-            return last
+        # a short loop (note → plan → action, again and again) folds into the rows it repeats instead of writing three
+        # new episodes per turn (seen live: ~230 identical episodes an hour while the language mind was down)
+        for last in list(self.entries)[-REPEAT_WINDOW:]:
+            if last.kind == kind and last.text == text:
+                last.count += 1
+                last.ts = ts
+                return last
         entry = TimelineEntry(ts=ts, kind=kind, text=text, first_ts=ts, actors=actors or [])
         self.entries.append(entry)
         self.events_since_rewrite += 1

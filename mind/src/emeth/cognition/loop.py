@@ -137,6 +137,8 @@ class CognitiveLoop:
         self._mentor_inbox: list[tuple[str, str]] = []
         # last time a player spoke in chat: talking to an empty world is noise (seen live: "Hmm, …" at every thought)
         self._last_heard_at: float = 0.0
+        # since when every decision falls back to instinct (None while the language mind answers)
+        self._mind_down_since: float | None = None
 
     # ---------------------------------------------------------------------------------------
     # lifecycle
@@ -164,9 +166,14 @@ class CognitiveLoop:
                 self._wait_until = 0.0  # whatever comes next replaces the wait (a new `wait` sets it again)
                 try:
                     await self.think(", ".join(reasons))
+                    if self._mind_down_since is not None:
+                        self.timeline.add("note", f"my language mind is back after {int((time.time() - self._mind_down_since) // 60)} min of instinct", importance=0.5)
+                        self._mind_down_since = None
                 except LLMError as exc:
                     self.stats.errors += 1
                     log.error("decision failed: %s", exc)
+                    if self._mind_down_since is None:
+                        self._mind_down_since = time.time()
                     self.timeline.add("note", f"my language mind is unavailable ({str(exc)[:100]}) — instinct takes over")
                     try:
                         await self.act_on_instinct(", ".join(reasons))

@@ -152,3 +152,14 @@ def test_social_memory_trust_dynamics(tmp_path):
     assert "gave me 3 bread" in desc and "promise" in desc
     block = social.render_block(present=["Steve"])
     assert block.startswith("Steve")
+
+
+def test_timeline_folds_a_short_loop(tmp_path):
+    store = MemoryStore(tmp_path / "loop.sqlite")
+    tl = Timeline(store)
+    for _ in range(20):
+        tl.add("note", "my language mind is unavailable — instinct takes over")
+        tl.add("plan", "instinct: resting → wait 45s")
+        tl.add("action", "waiting 45s")
+    assert len(tl.entries) == 3 and all(e.count == 20 for e in tl.entries)
+    assert len(store.recent_episodes(100)) == 3

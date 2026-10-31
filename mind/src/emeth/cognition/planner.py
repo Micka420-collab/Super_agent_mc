@@ -91,6 +91,18 @@ LADDER: list[tuple[str, str, str, dict[str, Any], list[str]]] = [
     ("nether", "Build a nether portal and light it", "build", {"custom": "portal"}, ["diamond_pickaxe"]),
 ]
 
+# a milestone that failed GIVE_UP_AFTER times rests, then comes back: 20 min, 40 min, 80 min… capped at 4 h. Banning it
+# for good locked the whole ladder (seen live: food, shelter and iron failed three times each, every later step needed
+# one of them, and the agent stood still for eight hours)
+GIVE_UP_AFTER = 3
+RETRY_AFTER_S = 20 * 60
+RETRY_MAX_S = 4 * 3600
+
+
+def retry_delay(failures: int) -> float:
+    return min(RETRY_MAX_S, RETRY_AFTER_S * 2 ** max(0, failures - GIVE_UP_AFTER))
+
+
 TOOL_TIERS = ["wooden", "stone", "iron", "diamond", "netherite"]
 FOOD_POINTS = {"cooked_beef": 8, "cooked_porkchop": 8, "cooked_mutton": 6, "cooked_chicken": 6, "cooked_cod": 5, "cooked_salmon": 6, "bread": 5, "apple": 4, "baked_potato": 5, "carrot": 3, "golden_apple": 4, "melon_slice": 2, "cooked_rabbit": 5, "beef": 3, "porkchop": 3, "chicken": 2, "mutton": 2, "potato": 1, "sweet_berries": 2, "glow_berries": 2, "pumpkin_pie": 8, "mushroom_stew": 6, "rabbit_stew": 10, "beetroot_soup": 6, "dried_kelp": 1}
 
@@ -154,12 +166,15 @@ class Planner:
         self.goals: list[Goal] = [Goal.from_dict(g) for g in store.get("goals", [])]
         self.done_milestones: set[str] = set(store.get("milestones.done", []))
         self.failed_milestones: dict[str, int] = dict(store.get("milestones.failed", {}))
+        # when each milestone last failed; a count without a time (older state) is eligible again at once
+        self.failed_at: dict[str, float] = dict(store.get("milestones.failed_at", {}))
         self.flags: dict[str, Any] = dict(store.get("planner.flags", {}))
 
     def save(self) -> None:
         self.store.set("goals", [g.to_dict() for g in self.goals])
         self.store.set("milestones.done", sorted(self.done_milestones))
         self.store.set("milestones.failed", self.failed_milestones)
+        self.store.set("milestones.failed_at", self.failed_at)
         self.store.set("planner.flags", self.flags)
 
     # ---- goal stack ------------------------------------------------------------------------
@@ -229,11 +244,22 @@ class Planner:
             self.save()
         return newly
 
-    def next_milestone(self) -> tuple[str, str, str, dict[str, Any]] | None:
+    def resting(self, mid: str, now: float | None = None) -> bool:
+        """A milestone that failed too often waits out its retry delay before the ladder offers it again."""
+        fails = self.failed_milestones.get(mid, 0)
+        if fails < GIVE_UP_AFTER:
+            return False
+        at = self.failed_at.get(mid)
+        return at is not None and (now if now is not None else time.time()) - at < retry_delay(fails)
+
+    def resting_milestones(self, now: float | None = None) -> list[str]:
+        return [mid for mid, *_ in LADDER if mid not in self.done_milestones and self.resting(mid, now)]
+
+    def next_milestone(self, now: float | None = None) -> tuple[str, str, str, dict[str, Any]] | None:
         for mid, desc, kind, spec, pre in LADDER:
             if mid in self.done_milestones:
                 continue
-            if self.failed_milestones.get(mid, 0) >= 3:
+            if self.resting(mid, now):
                 continue
             if all(p in self.done_milestones for p in pre):
                 return mid, desc, kind, spec
@@ -250,6 +276,7 @@ class Planner:
         if task.source.startswith("curriculum:"):
             mid = task.source.split(":", 1)[1]
             self.failed_milestones[mid] = self.failed_milestones.get(mid, 0) + 1
+            self.failed_at[mid] = time.time()
             self.save()
 
     def progress(self) -> dict[str, Any]:

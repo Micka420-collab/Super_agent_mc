@@ -216,3 +216,46 @@ def test_instinct_leaves_a_running_flee_reflex_alone(tmp_path):
     c = ctx(tmp_path, obs)
     c.known_actions.add("flee")
     assert instinct(c).action_type == "keep"
+
+
+def test_a_failed_milestone_rests_then_comes_back(tmp_path):
+    # seen live: food, shelter and iron failed three times each and the whole ladder stood still for eight hours
+    planner = Planner(MemoryStore(tmp_path / "rest.sqlite"))
+    planner.done_milestones |= {"wood", "planks", "table", "sticks", "wood_pickaxe", "stone", "stone_tools", "coal", "torches", "furnace"}
+    for _ in range(3):
+        planner.record_milestone_failure(Task(description="food", source="curriculum:food"))
+    t0 = planner.failed_at["food"]
+    assert planner.resting("food", t0 + 60)
+    nxt = planner.next_milestone(t0 + 60)
+    assert nxt is not None and nxt[0] != "food"
+    assert planner.next_milestone(t0 + 20 * 60 + 1)[0] == "food"
+    # one more failure doubles the rest, and it survives a restart
+    planner.record_milestone_failure(Task(description="food", source="curriculum:food"))
+    again = Planner(MemoryStore(tmp_path / "rest.sqlite"))
+    t1 = again.failed_at["food"]
+    assert again.resting("food", t1 + 39 * 60) and not again.resting("food", t1 + 41 * 60)
+    # a count saved before failure times existed does not lock the step forever
+    again.failed_at.pop("iron", None)
+    again.failed_milestones["iron"] = 3
+    assert not again.resting("iron")
+
+
+def test_instinct_explores_for_what_resting_steps_lacked(tmp_path):
+    obs = sample_observation()
+    obs.world.phase = "day"
+    obs.self_.food = 20
+    obs.inventory.items = [ItemStack(name="stone_pickaxe", count=1, slot=0)]
+    c = ctx(tmp_path, obs)
+    c.known_actions.add("explore")
+    for mid in ("food", "iron"):
+        for _ in range(3):
+            c.planner.record_milestone_failure(Task(description=mid, source=f"curriculum:{mid}"))
+    c.planner.done_milestones |= {"wood", "planks", "table", "sticks", "wood_pickaxe", "stone", "stone_tools", "coal", "torches", "furnace", "shelter"}
+    c.planner.failed_milestones["shelter"] = 0
+    assert c.planner.current_task() is None
+    d = instinct(c)
+    assert d.action_type == "primitive" and d.action_name == "explore", d
+    assert "cow" in d.action_args["lookFor"] and "iron_ore" in d.action_args["lookFor"]
+    # never at night
+    obs.world.phase = "night"
+    assert instinct(c).action_name != "explore"

@@ -12,7 +12,8 @@ Priorities (first match wins):
   2. starving with food in hand → eat;
   3. dusk/night outside → sleep in a carried bed, else the `emergency_shelter` skill if the library has it, else wait;
   4. the current curriculum milestone, translated into a deterministic primitive (mostly `get <item>`);
-  5. otherwise wait a while.
+  5. by day, with the ladder steps resting after repeated failures, explore and look for what they lacked;
+  6. otherwise wait a while.
 A call that already failed the same way three times in a row is not repeated: instinct waits instead (seen live: a
 shelter skill retried 894 times in two hours). It never speaks (it has nothing of its own to say) and never fights (reflexes handle defence). A `stored_skill`
 decision runs a skill already in the library by name (no code model needed) — only instinct emits that type.
@@ -64,6 +65,17 @@ MILESTONE_ACTIONS: dict[str, list[tuple[str, dict[str, Any], str | None]]] = {
 MILESTONE_SKILLS: dict[str, str] = {"shelter": "emergency_shelter"}
 
 SHELTER_SKILL = "emergency_shelter"
+
+# what a resting milestone was missing, for `explore` to stop at (seen live: food failed with no animal in reach)
+LOOK_FOR: dict[str, list[str]] = {
+    "food": ["cow", "pig", "sheep", "chicken", "rabbit"],
+    "iron": ["iron_ore", "deepslate_iron_ore"],
+    "coal": ["coal_ore"],
+    "diamond": ["diamond_ore", "deepslate_diamond_ore"],
+    "bed": ["sheep"],
+    "shelter": ["dirt", "stone"],
+}
+EXPLORE_SECONDS = 60
 
 
 @dataclass
@@ -163,5 +175,10 @@ def _choose(ctx: InstinctContext) -> Decision:
         skill = MILESTONE_SKILLS.get(mid)
         if skill and skill in ctx.available_skills:
             return Decision(reason=f"instinct: ladder step '{mid}' through the {skill} skill", action_type="stored_skill", action_name=skill, action_args={})
+
+    resting = ctx.planner.resting_milestones()
+    if task is None and resting and obs.world.phase not in ("dusk", "night") and can("explore"):
+        look = list(dict.fromkeys(name for mid in resting for name in LOOK_FOR.get(mid, [])))
+        return Decision(reason=f"instinct: {', '.join(resting)} failed too often for now — exploring for {', '.join(look[:4]) or 'new ground'}", action_type="primitive", action_name="explore", action_args={"direction": "random", "maxSeconds": EXPLORE_SECONDS, "lookFor": look})
 
     return Decision(reason="instinct: nothing urgent and no language mind — resting", action_type="wait", wait_seconds=45, wait_for="my mind to come back")
