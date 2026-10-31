@@ -54,6 +54,32 @@ rapportait `sealed: false` gardé comme compétence vérifiée ; aucune primitiv
 qui brûlait 120 s sans bouger ; `mine` qui comptait des blocs non cassés et ne savait pas creuser jusqu'au
 minerai ; `smelt iron_ingot` refusé ; établi ou four injoignable au lieu d'en poser un neuf.
 
+## Session 2, suite — « il casse la pierre à la main »
+
+Signalé par le joueur. En remontant la piste, on a trouvé six défauts, dont un majeur.
+
+- **Pathfinder jamais vraiment arrêté (défaut majeur).** `pathfinder.stop()` ne fait que demander l'arrêt. Sur un
+  bot coincé, le but restait posé après l'action, et le pathfinder continuait de diriger et de creuser pendant
+  l'action suivante. Le serveur corrigeait alors la position environ 20 fois par seconde : physique gelée,
+  `onGround` faux, minage 5 fois plus lent (pénalité vanilla hors du sol), coups annulés (« Digging aborted »).
+  Ce défaut expliquait aussi des `goto` immobiles. Diagnostic : compteur de corrections dans le corps, bot sonde
+  au même endroit (0 correction), reconnexions. Correctif : `haltPathfinder`, but effacé à la sortie de chaque
+  marche, arrêt d'urgence au-delà de 10 corrections par seconde. Après : 0 correction.
+- **Usure des outils invisible.** La pioche en pierre s'est usée sans qu'il le remarque. Le contexte affiche
+  maintenant l'usure, une alerte sous 20 %, et un « NO PICKAXE » qui nomme le remède (`get stone_pickaxe`).
+- **Pierre cassée à la main.** Le pathfinder et `dig` ne cassent plus un bloc dont l'outil manque. Seule exception :
+  enfermé sans outil, il creuse jusqu'à l'établi à la main, et seulement à travers le terrain ou ses propres murs.
+  Le corps retient sur disque les blocs qu'il pose.
+- **Établi hors du plan.** Le planificateur ne voyait les établis qu'à 24 blocs, l'exécution à 32 : le plan
+  l'envoyait couper du bois introuvable sous terre. Le rayon est maintenant commun (48), et le plan dit où est
+  l'établi.
+- **Programmes « réussis » sans effet.** Un programme dont aucun appel réussi ne change le monde est un échec
+  (NO_EFFECT).
+- **Monstre derrière la roche.** Un creeper de l'autre côté d'un mur déclenchait la fuite en boucle. Sans ligne de
+  vue, un monstre ne déclenche plus de réflexe et ne compte que pour 15 % du danger.
+
+Résultat vérifié en jeu : il a creusé à la main de 22 m à 5 m de l'établi, puis a refait sa pioche en pierre.
+
 ## Défauts trouvés en vrai et corrigés pendant la session 1
 
 1. **Arguments vides** : en sortie structurée, un objet sans propriétés ne peut valoir que `{}`. Les décisions et
