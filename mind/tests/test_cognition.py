@@ -182,3 +182,37 @@ async def test_consolidation_dream_writes_pages_and_updates_identity(tmp_path):
 
 def test_asyncio_marker_sanity():
     assert asyncio.get_event_loop_policy() is not None
+
+
+class _FinishingProvider(MockProvider):
+    """A mock that also reports a finish reason, and counts the calls."""
+
+    finish_reason = "stop"
+
+    async def chat(self, request):  # type: ignore[no-untyped-def]
+        resp = await super().chat(request)
+        await asyncio.sleep(0.01)
+        return resp.model_copy(update={"finish_reason": self.finish_reason})
+
+
+async def test_rolling_rewrite_runs_once_and_backs_off_after_a_failure(tmp_path):
+    store = MemoryStore(tmp_path / "m.sqlite")
+    provider = _FinishingProvider("m", responses=[])
+    router = LLMRouter([provider])
+    emb = __import__("emeth.llm.embeddings", fromlist=["Embedder"]).Embedder(router)
+    timeline = Timeline(store)
+    for i in range(30):
+        timeline.add("note", f"event {i}")
+    cons = Consolidator(router, store, Wiki(tmp_path / "wiki", store, emb), timeline, SocialMemory(store), WorldGraph(tmp_path / "g.json"), SkillLibrary(tmp_path / "skills", store, emb), Identity(name="Emeth"))
+    store.set("rolling.previously", "old past")
+    # a truncated answer keeps the old blocks, and the counter restarts so the next try waits for new events
+    provider.responses.append({"previously": "half a", "about_players": ""})
+    provider.finish_reason = "length"
+    prev, _ = await cons.rewrite_rolling()
+    assert prev == "old past" and timeline.since_rewrite() == 0
+    # concurrent calls: only one reaches the model
+    provider.finish_reason = "stop"
+    provider.responses.extend([{"previously": "new past", "about_players": "nobody"}] * 2)
+    calls = len(provider.requests)
+    await asyncio.gather(cons.rewrite_rolling(), cons.rewrite_rolling())
+    assert len(provider.requests) - calls == 1 and store.get("rolling.previously") == "new past"
