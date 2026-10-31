@@ -157,6 +157,16 @@ def _choose(ctx: InstinctContext) -> Decision:
             return Decision(reason="instinct: night outside, raising an emergency shelter", action_type="stored_skill", action_name=SHELTER_SKILL, action_args={})
         return Decision(reason="instinct: night outside and nothing to build with, staying put", action_type="wait", wait_seconds=60, wait_for="daylight")
 
+    task = ctx.planner.current_task()
+    if task is not None and task.target and can("goto") and can("collect_items"):
+        # going back for dropped items before anything else: they despawn in five minutes (seen live: it crafted a
+        # pickaxe first and let its things vanish)
+        x, y, z = task.target
+        p = s.position
+        if (p.x - x) ** 2 + (p.y - y) ** 2 + (p.z - z) ** 2 > 9:
+            return Decision(reason=f"instinct: {task.description[:60]}", action_type="primitive", action_name="goto", action_args={"x": x, "y": y, "z": z, "range": 2})
+        return Decision(reason="instinct: back where I died, picking up my things", action_type="primitive", action_name="collect_items", action_args={"radius": 8})
+
     had_one = "wood_pickaxe" in ctx.planner.done_milestones  # a newborn follows its ladder instead
     if had_one and not any(n.endswith("_pickaxe") for n in inv) and can("get"):
         # a worn-out pickaxe is replaced before anything else that touches stone (seen live: stone broken by hand)
@@ -164,14 +174,6 @@ def _choose(ctx: InstinctContext) -> Decision:
         target = "stone_pickaxe" if stone >= 3 else "wooden_pickaxe"
         return Decision(reason=f"instinct: no pickaxe left, making a {target} before anything else", action_type="primitive", action_name="get", action_args={"name": target, "count": 1})
 
-    task = ctx.planner.current_task()
-    if task is not None and task.target and can("goto") and can("collect_items"):
-        # going back for dropped items: walk there, then pick up what is still on the ground
-        x, y, z = task.target
-        p = s.position
-        if (p.x - x) ** 2 + (p.y - y) ** 2 + (p.z - z) ** 2 > 9:
-            return Decision(reason=f"instinct: {task.description[:60]}", action_type="primitive", action_name="goto", action_args={"x": x, "y": y, "z": z, "range": 2})
-        return Decision(reason="instinct: back where I died, picking up my things", action_type="primitive", action_name="collect_items", action_args={"radius": 8})
     mid = _milestone_id(task)
     if mid:
         for primitive, args, satisfied_by in MILESTONE_ACTIONS.get(mid, []):

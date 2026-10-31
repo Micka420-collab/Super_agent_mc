@@ -270,6 +270,7 @@ def test_a_recovery_goal_expires_with_the_drops_and_instinct_walks_back(tmp_path
     obs.world.phase = "day"
     obs.self_.food = 20
     c = InstinctContext(obs=obs, planner=planner, busy=False, available_skills=set(), known_actions=ACTIONS | {"collect_items"})
+    planner.done_milestones.add("wood_pickaxe")  # no pickaxe left after dying: the drops still come first
     d = instinct(c)
     assert d.action_name == "goto" and (d.action_args["x"], d.action_args["z"]) == (24.0, -650.0)
     obs.self_.position.x, obs.self_.position.y, obs.self_.position.z = 24.0, 62.0, -649.0

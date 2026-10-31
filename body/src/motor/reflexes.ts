@@ -11,7 +11,7 @@ import type { Bot } from 'mineflayer';
 import type { Entity } from 'prismarine-entity';
 import type { ActionRunner, Running } from '../actions/runner.js';
 import type { Observer } from '../perception/observer.js';
-import { classifyEntity, EXPLOSIVE_MOBS, isThreat } from '../perception/entities.js';
+import { classifyEntity, EXPLOSIVE_MOBS, isThreat, RANGED_MOBS } from '../perception/entities.js';
 import { ReflexConfigSchema, type ReflexConfig } from '../protocol.js';
 import { getLogger } from '../util/logger.js';
 import { distance } from '../util/geometry.js';
@@ -34,6 +34,16 @@ interface PvpPlugin {
   attack: (target: Entity) => Promise<void>;
   stop: () => Promise<void>;
   target?: Entity;
+}
+
+/**
+ * How far to run from a threat. An archer keeps shooting up to ~16 blocks and follows: fleeing to 16 left the bot in
+ * range, and a skeleton took it from 20 to 0 over five flee cycles (seen live). Ranged mobs get room beyond that.
+ */
+export const RANGED_FLEE_DISTANCE = 28;
+
+export function fleeDistanceFrom(name: string | undefined, base: number): number {
+  return name && RANGED_MOBS.has(name) ? Math.max(base, RANGED_FLEE_DISTANCE) : base;
 }
 
 export class ReflexSystem {
@@ -215,7 +225,7 @@ export class ReflexSystem {
         priority: 80,
         reason: overwhelmed && odds ? `danger ${odds.danger} (${odds.reasons.slice(0, 3).join(', ')})` : `health ${bot.health} with ${threat.entity.name} at ${threat.dist.toFixed(1)}m`,
         run: async (running) => {
-          await fleeFrom(bot, threat.entity.position, cfg.fleeDistance, running.controller.signal, 12_000).catch(() => undefined);
+          await fleeFrom(bot, threat.entity.position, fleeDistanceFrom(threat.entity.name, cfg.fleeDistance), running.controller.signal, 12_000).catch(() => undefined);
         },
       };
     }
