@@ -182,3 +182,37 @@ def test_tool_wear_and_missing_pickaxe_are_in_the_context():
     obs.inventory.items = [ItemStack(name="cobblestone", count=64, slot=0), ItemStack(name="stick", count=2, slot=1)]
     text = render_inventory(obs)
     assert "NO PICKAXE" in text and "you carry what a stone_pickaxe needs" in text and "`get stone_pickaxe`" in text
+
+
+def test_instinct_respawns_a_dead_body_first(tmp_path):
+    obs = sample_observation()
+    obs.self_.health = 0
+    c = ctx(tmp_path, obs, busy=True)  # a reflex that outlived the death still holds the hands
+    c.known_actions.add("respawn")
+    d = instinct(c)
+    assert d.action_type == "primitive" and d.action_name == "respawn"
+
+
+def test_instinct_stops_repeating_a_call_that_keeps_failing(tmp_path):
+    obs = sample_observation()
+    obs.world.phase = "night"
+    obs.blocks.enclosure = None
+    c = ctx(tmp_path, obs, skills={"emergency_shelter"})
+    assert instinct(c).action_name == "emergency_shelter"
+    c.failure_streak = ("stored_skill: emergency_shelter", "NOT_FOUND", 3)
+    d = instinct(c)
+    assert d.action_type == "wait" and "3 times" in d.reason
+    # another call failing does not block this one
+    c.failure_streak = ("primitive: get", "NOT_FOUND", 5)
+    assert instinct(c).action_name == "emergency_shelter"
+
+
+def test_instinct_leaves_a_running_flee_reflex_alone(tmp_path):
+    from emeth.protocol import CurrentAction, ThreatState
+
+    obs = sample_observation()
+    obs.entities.threat = ThreatState.model_validate({"danger": 0.9, "recommendation": "flee", "reasons": ["creeper 8m"], "nearest": {"name": "creeper", "distance": 8}})
+    obs.action = CurrentAction(id="r1", name="reflex:flee", startedAt=0)
+    c = ctx(tmp_path, obs)
+    c.known_actions.add("flee")
+    assert instinct(c).action_type == "keep"

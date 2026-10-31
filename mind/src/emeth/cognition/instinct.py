@@ -6,13 +6,15 @@ and drives the LLM uses, and it produces the same `Decision` objects, so executi
 special — except that the timeline says *instinct* did it, which the mind reads when it comes back.
 
 Priorities (first match wins):
+  -1. dead → respawn (the death screen waits forever otherwise);
   0. the body reads the odds as "flee" → run (even if something is running);
   1. something is already running → keep;
   2. starving with food in hand → eat;
   3. dusk/night outside → sleep in a carried bed, else the `emergency_shelter` skill if the library has it, else wait;
   4. the current curriculum milestone, translated into a deterministic primitive (mostly `get <item>`);
   5. otherwise wait a while.
-It never speaks (it has nothing of its own to say) and never fights (reflexes handle defence). A `stored_skill`
+A call that already failed the same way three times in a row is not repeated: instinct waits instead (seen live: a
+shelter skill retried 894 times in two hours). It never speaks (it has nothing of its own to say) and never fights (reflexes handle defence). A `stored_skill`
 decision runs a skill already in the library by name (no code model needed) — only instinct emits that type.
 """
 
@@ -23,6 +25,7 @@ from typing import Any
 
 from emeth.cognition.decide import Decision
 from emeth.cognition.planner import FOOD_POINTS, Planner, Task
+from emeth.cognition.reflection import signature_of
 from emeth.protocol import Observation
 
 # milestone id → what to ask the body for (ordered alternatives: the first one not yet satisfied is used)
@@ -70,6 +73,11 @@ class InstinctContext:
     busy: bool
     available_skills: set[str]
     known_actions: set[str]
+    # Reflection.same_failure_streak(): (signature, error code, n) of the call that keeps failing, if any
+    failure_streak: tuple[str, str, int] | None = None
+
+# failing the same way this many times in a row makes instinct stop retrying that call
+GIVE_UP_AFTER = 3
 
 
 def _count(inv: dict[str, int], name: str) -> int:
@@ -97,13 +105,26 @@ def _milestone_id(task: Task | None) -> str | None:
 
 def instinct(ctx: InstinctContext) -> Decision:
     """A deterministic decision from the current state. Always valid against `known_actions`."""
+    if ctx.obs.self_.health <= 0 and "respawn" in ctx.known_actions:
+        return Decision(reason="instinct: I am dead, getting back up", action_type="primitive", action_name="respawn", action_args={})
+    decision = _choose(ctx)
+    streak = ctx.failure_streak
+    if streak and streak[2] >= GIVE_UP_AFTER and decision.action_type in ("primitive", "stored_skill") and decision.action_name:
+        kind = "primitive" if decision.action_type == "primitive" else "stored_skill"
+        if signature_of(kind, decision.action_name, decision.action_args) == streak[0]:
+            return Decision(reason=f"instinct: {decision.action_name} failed {streak[2]} times in a row ({streak[1]}), not trying it again now", action_type="wait", wait_seconds=120, wait_for="something to change")
+    return decision
+
+
+def _choose(ctx: InstinctContext) -> Decision:
     obs = ctx.obs
     inv = obs.inventory.summary()
     s = obs.self_
     can = ctx.known_actions.__contains__
 
     threat = obs.entities.threat
-    if threat is not None and threat.recommendation == "flee" and threat.nearest and can("flee"):
+    reflex_running = obs.action is not None and obs.action.name.startswith("reflex:")
+    if threat is not None and threat.recommendation == "flee" and threat.nearest and can("flee") and not reflex_running:
         # the reflex layer runs first; this covers the gap when the mind is woken by the threat before the reflex fires
         return Decision(reason=f"instinct: the odds are bad ({', '.join(threat.reasons[:3])}), getting away", action_type="primitive", action_name="flee", action_args={"distance": 24})
 
