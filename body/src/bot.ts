@@ -127,6 +127,9 @@ export function createBody(config: BodyConfig): BodyRuntime {
     emit('hurt', { health: bot.health, source: src });
   });
   bot.on('death', () => {
+    // nothing the body was doing survives a death: release the hands and the keys
+    runner.interrupt('died', Number.POSITIVE_INFINITY);
+    stopAllMovement(bot);
     observer.pushEvent('death', 'I died');
     emit('death', { position: bot.entity ? roundVec(bot.entity.position) : null, ts: Date.now() });
   });

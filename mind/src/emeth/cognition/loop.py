@@ -385,9 +385,17 @@ class CognitiveLoop:
         return ""
 
     async def _respawn_later(self) -> None:
-        await asyncio.sleep(3)
-        with contextlib.suppress(Exception):
-            await self.body.act("respawn")
+        # retried: a single silent attempt once left the body on the death screen for hours
+        for attempt in range(10):
+            await asyncio.sleep(3 if attempt == 0 else 10)
+            try:
+                res = await self.body.act("respawn")
+            except Exception as exc:  # noqa: BLE001
+                log.warning("respawn attempt %d failed: %s", attempt + 1, exc)
+                continue
+            if res.ok:
+                return
+            log.warning("respawn attempt %d refused: %s %s", attempt + 1, res.errorCode, res.error)
 
     async def _dream(self, day: int) -> None:
         try:
@@ -438,7 +446,7 @@ class CognitiveLoop:
             self._ensure_goal(obs)
             library = self.synthesizer.library if self.synthesizer else None
             available = {r.name for r in library.records()} if library else set()
-            decision = instinct(InstinctContext(obs=obs, planner=self.planner, busy=bool(self._action_task and not self._action_task.done()), available_skills=available, known_actions=self.body.action_names))
+            decision = instinct(InstinctContext(obs=obs, planner=self.planner, busy=bool(self._action_task and not self._action_task.done()), available_skills=available, known_actions=self.body.action_names, failure_streak=self.reflection.same_failure_streak()))
             self.stats.instinct_decisions += 1
             await self._execute(decision, obs)
             return decision

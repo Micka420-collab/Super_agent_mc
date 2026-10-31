@@ -38,6 +38,16 @@ beforeAll(() => {
     },
   });
   defineAction({
+    name: 'respawn',
+    category: 'survival',
+    description: 'respawn',
+    longRunning: false,
+    schema: z.object({}),
+    async run() {
+      return { respawned: true };
+    },
+  });
+  defineAction({
     name: 'boom',
     category: 'meta',
     description: 'throws',
@@ -129,3 +139,15 @@ describe('skill sandbox', () => {
     expect(res.ok).toBe(true);
   });
 });
+
+describe('action runner', () => {
+  it('lets respawn replace whatever outlived a death', async () => {
+    const runner = fakeRunner();
+    const held = runner.acquire('reflex:flee', 'action', 100); // reflexes outrank ordinary actions
+    const res = await runner.run({ action: 'respawn', args: {} });
+    expect(res.ok).toBe(true);
+    expect(held.controller.signal.aborted).toBe(true);
+    expect(runner.isBusy()).toBe(false);
+  });
+});
+
