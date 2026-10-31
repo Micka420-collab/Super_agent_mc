@@ -839,6 +839,8 @@ class CognitiveLoop:
                     self.drives.on_event("achievement")
                     if task.kind == "build":
                         self.identity.bump(structures_built=1)
+                elif result is not None and not ok and result.errorCode == "INTERRUPTED":
+                    pass  # a reflex preempted the attempt (fleeing a skeleton mid-hunt): not a failure of the task itself
                 elif not ok or verdict.method == "programmatic":
                     self.planner.fail_task(task, verdict.critique or verdict.reasoning)
                     if task.status == "failed":

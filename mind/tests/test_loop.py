@@ -239,3 +239,21 @@ async def test_skill_synthesis_retries_a_truncated_answer(tmp_path):
     assert "cut off" in trunc.requests[1].messages[-1].content
     assert "step by step" not in trunc.requests[0].messages[0].content.lower()
     await body.close()
+
+
+async def test_a_reflex_interruption_is_not_a_failed_attempt(tmp_path):
+    # seen live: fleeing a skeleton mid-hunt cost the food milestone one of its four attempts
+    from emeth.cognition.planner import Task
+    from emeth.protocol import ActionResult
+
+    world = FakeWorld()
+    loop, body, _ = await make_loop(tmp_path, world)
+    loop.planner.add_goal("food", [Task(description="Get food", kind="gather", success={"food_points": 32}, source="curriculum:food")], source="curriculum")
+    task = loop.planner.current_task()
+    interrupted = ActionResult(id="1", action="get", ok=False, error="reflex:flee", errorCode="INTERRUPTED", startedAt=0, finishedAt=1)
+    await loop._on_result(interrupted, result_text="get interrupted by reflex:flee")  # noqa: SLF001
+    assert task.attempts == 0 and task.status == "active"
+    failed = ActionResult(id="2", action="get", ok=False, error="no cow", errorCode="NOT_FOUND", startedAt=0, finishedAt=1)
+    await loop._on_result(failed, result_text="get failed")  # noqa: SLF001
+    assert task.attempts == 1
+    await body.close()
