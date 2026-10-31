@@ -165,6 +165,13 @@ def _choose(ctx: InstinctContext) -> Decision:
         return Decision(reason=f"instinct: no pickaxe left, making a {target} before anything else", action_type="primitive", action_name="get", action_args={"name": target, "count": 1})
 
     task = ctx.planner.current_task()
+    if task is not None and task.target and can("goto") and can("collect_items"):
+        # going back for dropped items: walk there, then pick up what is still on the ground
+        x, y, z = task.target
+        p = s.position
+        if (p.x - x) ** 2 + (p.y - y) ** 2 + (p.z - z) ** 2 > 9:
+            return Decision(reason=f"instinct: {task.description[:60]}", action_type="primitive", action_name="goto", action_args={"x": x, "y": y, "z": z, "range": 2})
+        return Decision(reason="instinct: back where I died, picking up my things", action_type="primitive", action_name="collect_items", action_args={"radius": 8})
     mid = _milestone_id(task)
     if mid:
         for primitive, args, satisfied_by in MILESTONE_ACTIONS.get(mid, []):
@@ -177,7 +184,8 @@ def _choose(ctx: InstinctContext) -> Decision:
             return Decision(reason=f"instinct: ladder step '{mid}' through the {skill} skill", action_type="stored_skill", action_name=skill, action_args={})
 
     resting = ctx.planner.resting_milestones()
-    if task is None and resting and obs.world.phase not in ("dusk", "night") and can("explore"):
+    # a task instinct cannot translate (an idea of the language mind) must not freeze it either
+    if resting and obs.world.phase not in ("dusk", "night") and can("explore"):
         look = list(dict.fromkeys(name for mid in resting for name in LOOK_FOR.get(mid, [])))
         return Decision(reason=f"instinct: {', '.join(resting)} failed too often for now — exploring for {', '.join(look[:4]) or 'new ground'}", action_type="primitive", action_name="explore", action_args={"direction": "random", "maxSeconds": EXPLORE_SECONDS, "lookFor": look})
 

@@ -28,6 +28,7 @@ class Task:
     created_at: float = field(default_factory=time.time)
     last_error: str = ""
     source: str = "curriculum"  # curriculum | llm | player | self
+    target: list[float] | None = None  # a place the task is about (x, y, z), e.g. where the agent died
 
     def to_dict(self) -> dict[str, Any]:
         return self.__dict__.copy()
@@ -46,6 +47,7 @@ class Goal:
     priority: int = 5  # 1 (urgent) .. 9 (someday)
     source: str = "self"
     created_at: float = field(default_factory=time.time)
+    expires_at: float | None = None  # past this time the goal no longer makes sense (dropped items despawn)
 
     def current_task(self) -> Task | None:
         for t in self.tasks:
@@ -61,7 +63,7 @@ class Goal:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Goal:
         tasks = [Task.from_dict(t) for t in d.get("tasks", [])]
-        return cls(title=d["title"], why=d.get("why", ""), tasks=tasks, status=d.get("status", "active"), priority=d.get("priority", 5), source=d.get("source", "self"), created_at=d.get("created_at", time.time()))
+        return cls(title=d["title"], why=d.get("why", ""), tasks=tasks, status=d.get("status", "active"), priority=d.get("priority", 5), source=d.get("source", "self"), created_at=d.get("created_at", time.time()), expires_at=d.get("expires_at"))
 
 
 # --- Survival curriculum ladder -----------------------------------------------------------------
@@ -97,6 +99,10 @@ LADDER: list[tuple[str, str, str, dict[str, Any], list[str]]] = [
 GIVE_UP_AFTER = 3
 RETRY_AFTER_S = 20 * 60
 RETRY_MAX_S = 4 * 3600
+
+
+RECOVER_PREFIX = "Recover my belongings"
+DROP_LIFETIME_S = 5 * 60  # items on the ground despawn after 6000 ticks
 
 
 def retry_delay(failures: int) -> float:
@@ -169,6 +175,10 @@ class Planner:
         # when each milestone last failed; a count without a time (older state) is eligible again at once
         self.failed_at: dict[str, float] = dict(store.get("milestones.failed_at", {}))
         self.flags: dict[str, Any] = dict(store.get("planner.flags", {}))
+        for g in self.goals:
+            # saved before goals could expire: a recovery goal is only worth the five minutes the drops last
+            if g.expires_at is None and g.title.startswith(RECOVER_PREFIX):
+                g.expires_at = g.created_at + DROP_LIFETIME_S
 
     def save(self) -> None:
         self.store.set("goals", [g.to_dict() for g in self.goals])
@@ -178,7 +188,18 @@ class Planner:
         self.store.set("planner.flags", self.flags)
 
     # ---- goal stack ------------------------------------------------------------------------
+    def expire_goals(self, now: float | None = None) -> list[Goal]:
+        """Abandon the goals whose deadline has passed (seen live: an old recovery goal held the stack for six hours)."""
+        now = now if now is not None else time.time()
+        gone = [g for g in self.goals if g.status == "active" and g.expires_at is not None and now >= g.expires_at]
+        for g in gone:
+            g.status = "abandoned"
+        if gone:
+            self.save()
+        return gone
+
     def active_goal(self) -> Goal | None:
+        self.expire_goals()
         active = [g for g in self.goals if g.status == "active"]
         active.sort(key=lambda g: (g.priority, g.created_at))
         return active[0] if active else None

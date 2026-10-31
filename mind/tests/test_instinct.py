@@ -259,3 +259,23 @@ def test_instinct_explores_for_what_resting_steps_lacked(tmp_path):
     # never at night
     obs.world.phase = "night"
     assert instinct(c).action_name != "explore"
+
+
+def test_a_recovery_goal_expires_with_the_drops_and_instinct_walks_back(tmp_path):
+    # seen live: a recovery goal from a death six hours earlier held the stack and instinct rested under it
+    store = MemoryStore(tmp_path / "rec.sqlite")
+    planner = Planner(store)
+    goal = planner.add_goal("Recover my belongings where I died (24, 62, -650)", [Task(description="go back", kind="explore", target=[24.0, 62.0, -650.0])], priority=2, source="self")
+    obs = sample_observation()
+    obs.world.phase = "day"
+    obs.self_.food = 20
+    c = InstinctContext(obs=obs, planner=planner, busy=False, available_skills=set(), known_actions=ACTIONS | {"collect_items"})
+    d = instinct(c)
+    assert d.action_name == "goto" and (d.action_args["x"], d.action_args["z"]) == (24.0, -650.0)
+    obs.self_.position.x, obs.self_.position.y, obs.self_.position.z = 24.0, 62.0, -649.0
+    assert instinct(c).action_name == "collect_items"
+    # a goal saved before expiry existed gets the five minutes back from its creation time
+    goal.created_at -= 3600
+    planner.save()
+    again = Planner(store)
+    assert again.current_task() is None and again.goals[-1].status == "abandoned"

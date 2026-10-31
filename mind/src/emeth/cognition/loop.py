@@ -35,7 +35,7 @@ from emeth.cognition.decide import (
 )
 from emeth.cognition.drives import Drives
 from emeth.cognition.instinct import InstinctContext, instinct
-from emeth.cognition.planner import Planner, Task
+from emeth.cognition.planner import DROP_LIFETIME_S, RECOVER_PREFIX, Planner, Task
 from emeth.cognition.reflection import Reflection, signature_of
 from emeth.cognition.skills import SkillOutcome, SkillSynthesizer
 from emeth.config import LoopConfig
@@ -270,9 +270,11 @@ class CognitiveLoop:
                 try:
                     x, y, z = float(pos["x"]), float(pos["y"]), float(pos["z"])
                     self.graph.mark_place("where I died", x, y, z, kind="place", notes="my items dropped here")
-                    title = f"Recover my belongings where I died ({x:.0f}, {y:.0f}, {z:.0f})"
+                    title = f"{RECOVER_PREFIX} where I died ({x:.0f}, {y:.0f}, {z:.0f})"
                     if not any(g.title == title and g.status == "active" for g in self.planner.goals):
-                        self.planner.add_goal(title, [Task(description=f"go back to ({x:.0f}, {y:.0f}, {z:.0f}) within 5 minutes and pick up my dropped items (collect_items), carefully — whatever killed me may still be there", kind="explore", max_attempts=2)], why="items despawn five minutes after death", priority=2, source="self")
+                        goal = self.planner.add_goal(title, [Task(description=f"go back to ({x:.0f}, {y:.0f}, {z:.0f}) within 5 minutes and pick up my dropped items (collect_items), carefully — whatever killed me may still be there", kind="explore", max_attempts=2, target=[x, y, z])], why="items despawn five minutes after death", priority=2, source="self")
+                        goal.expires_at = goal.created_at + DROP_LIFETIME_S
+                        self.planner.save()
                         self.timeline.add("plan", "new goal: recover my belongings where I died", importance=0.6)
                 except (KeyError, TypeError, ValueError):
                     pass
