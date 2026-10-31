@@ -96,3 +96,14 @@ describe('assessThreat when sealed in', () => {
     expect(inside.danger).toBeGreaterThan(0);
   });
 });
+
+describe('assessThreat and walls', () => {
+  it('a mob without line of sight weighs little, one in sight weighs fully', () => {
+    const base = { health: 20, armor: {}, heldItem: null, offhandItem: null, phase: 'day' as const, skyLight: 0 };
+    const seen = assessThreat({ ...base, hostiles: [{ name: 'creeper', distance: 5, visible: true }, { name: 'zombie', distance: 6, visible: true }] });
+    const hidden = assessThreat({ ...base, hostiles: [{ name: 'creeper', distance: 5, visible: false }, { name: 'zombie', distance: 6, visible: false }] });
+    expect(seen.recommendation).not.toBe('calm');
+    expect(hidden.danger).toBeLessThan(seen.danger * 0.3);
+    expect(hidden.recommendation).not.toBe('flee');
+  });
+});

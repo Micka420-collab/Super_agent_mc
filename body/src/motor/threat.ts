@@ -105,10 +105,13 @@ export function assessThreat(input: ThreatInput): ThreatAssessment {
   for (const h of hostiles) {
     const w = MOB_WEIGHT[h.name] ?? 1.0;
     // walled in: melee mobs cannot reach and arrows need a line of sight; a creeper still blasts through walls
-    const f = distanceFactor(h.name, h.distance) * (input.enclosed ? (EXPLOSIVE_MOBS.has(h.name) ? 0.3 : 0) : 1);
+    // behind a wall (no line of sight): it may find a way round, but it is not upon me (seen live: "danger 84%" for
+    // a creeper on the far side of the rock, which the mind then fled from all morning)
+    const hidden = h.visible === false && h.distance > 1.5 ? 0.15 : 1;
+    const f = distanceFactor(h.name, h.distance) * hidden * (input.enclosed ? (EXPLOSIVE_MOBS.has(h.name) ? 0.3 : 0) : 1);
     pressure += w * f;
     if (f >= 0.45) {
-      const tag = EXPLOSIVE_MOBS.has(h.name) ? ' (explosive)' : RANGED_MOBS.has(h.name) ? ' (ranged)' : '';
+      const tag = hidden < 1 ? ' (behind a wall)' : EXPLOSIVE_MOBS.has(h.name) ? ' (explosive)' : RANGED_MOBS.has(h.name) ? ' (ranged)' : '';
       reasons.push(`${h.name} ${Math.round(h.distance)}m${tag}`);
     }
   }
